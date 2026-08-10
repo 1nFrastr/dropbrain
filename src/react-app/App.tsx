@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import {
   checkAnswer as checkAnswerApi,
@@ -7,10 +7,18 @@ import {
   createUrlSource,
   getQuiz,
   submitQuiz,
+  type ChatTurn,
   type GradedResult,
   type QuizPayload,
   type SubmitResponse,
 } from "./api";
+import {
+  contentLanguageLabel,
+  resolveInitialLanguage,
+  saveLanguage,
+  type AppLanguage,
+} from "./i18n";
+import QuizChatSidebar from "./QuizChatSidebar";
 
 type Tab = "text" | "url";
 type Step = "home" | "generating" | "quiz" | "results";
@@ -19,6 +27,7 @@ type GenPhase = "idle" | "fetching" | "writing" | "done";
 const LETTERS = ["A", "B", "C", "D"] as const;
 
 export default function App() {
+  const [contentLang, setContentLang] = useState<AppLanguage>("en");
   const [step, setStep] = useState<Step>("home");
   const [tab, setTab] = useState<Tab>("text");
   const [text, setText] = useState("");
@@ -37,12 +46,27 @@ export default function App() {
   } | null>(null);
   const [submitResult, setSubmitResult] = useState<SubmitResponse | null>(null);
   const [busy, setBusy] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatByQuestion, setChatByQuestion] = useState<
+    Record<string, ChatTurn[]>
+  >({});
+
+  useEffect(() => {
+    setContentLang(resolveInitialLanguage());
+  }, []);
+
+  function onContentLanguageChange(next: AppLanguage) {
+    setContentLang(next);
+    saveLanguage(next);
+  }
 
   const current = quiz?.questions[index];
   const progressLabel = useMemo(() => {
     if (!quiz) return "";
     return `${index + 1} / ${quiz.questions.length}`;
   }, [quiz, index]);
+
+  const chatMessages = current ? (chatByQuestion[current.id] ?? []) : [];
 
   async function onGenerate() {
     setError(null);
@@ -54,6 +78,8 @@ export default function App() {
     setChoices({});
     setSubmitResult(null);
     setIndex(0);
+    setChatOpen(false);
+    setChatByQuestion({});
 
     try {
       const source =
@@ -62,7 +88,7 @@ export default function App() {
           : await createUrlSource(url.trim());
 
       setGenPhase("writing");
-      const created = await createQuiz(source.sourceId, count);
+      const created = await createQuiz(source.sourceId, count, contentLang);
       const full = await getQuiz(created.quizId);
       if (!full.questions.length) {
         throw new Error("No questions were generated.");
@@ -106,6 +132,7 @@ export default function App() {
 
   async function onNext() {
     if (!quiz) return;
+    setChatOpen(false);
     if (index < quiz.questions.length - 1) {
       setIndex((i) => i + 1);
       setRevealed(false);
@@ -140,10 +167,12 @@ export default function App() {
     setRevealed(false);
     setLocalReveal(null);
     setGenPhase("idle");
+    setChatOpen(false);
+    setChatByQuestion({});
   }
 
   return (
-    <div className="app">
+    <div className={`app${chatOpen ? " chat-open" : ""}`}>
       {step === "home" && (
         <section className="hero">
           <h1 className="brand">Dropbrain</h1>
@@ -207,6 +236,19 @@ export default function App() {
                       {n}
                     </option>
                   ))}
+                </select>
+              </div>
+              <div className="control">
+                <label htmlFor="content-lang">Content language</label>
+                <select
+                  id="content-lang"
+                  value={contentLang}
+                  onChange={(e) =>
+                    onContentLanguageChange(e.target.value as AppLanguage)
+                  }
+                >
+                  <option value="zh">{contentLanguageLabel("zh")}</option>
+                  <option value="en">{contentLanguageLabel("en")}</option>
                 </select>
               </div>
               <button
@@ -299,6 +341,13 @@ export default function App() {
                 {localReveal.correct ? "Correct" : "Not quite"}
               </p>
               <p>{localReveal.explanation}</p>
+              <button
+                type="button"
+                className="ghost ask-btn"
+                onClick={() => setChatOpen(true)}
+              >
+                Ask about this
+              </button>
             </div>
           )}
 
@@ -314,6 +363,23 @@ export default function App() {
               {index >= quiz.questions.length - 1 ? "See results" : "Next"}
             </button>
           </div>
+
+          <QuizChatSidebar
+            open={chatOpen}
+            onClose={() => setChatOpen(false)}
+            quizId={quiz.id}
+            questionId={current.id}
+            questionStem={current.stem}
+            choice={choices[current.id]}
+            language={contentLang}
+            messages={chatMessages}
+            onMessagesChange={(messages) =>
+              setChatByQuestion((prev) => ({
+                ...prev,
+                [current.id]: messages,
+              }))
+            }
+          />
         </section>
       )}
 
@@ -384,9 +450,9 @@ function ResultsView({
               </p>
               {r.tags.length > 0 && (
                 <div className="tags" style={{ marginTop: "0.55rem" }}>
-                  {r.tags.map((t) => (
-                    <span className="tag" key={t}>
-                      {t}
+                  {r.tags.map((tag) => (
+                    <span className="tag" key={tag}>
+                      {tag}
                     </span>
                   ))}
                 </div>

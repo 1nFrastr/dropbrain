@@ -5,5 +5,6 @@
     "lib": ["ES2023", "WebWorker"],
     "types": ["@cloudflare/workers-types", "vite/client"]
   },
-  "include": ["src/worker", "worker-configuration.d.ts"]
+  "include": ["src/worker", "worker-configuration.d.ts"],
+  "exclude": ["src/worker/**/*.test.ts"]
 }

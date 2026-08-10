@@ -1,7 +1,12 @@
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import { fetchSource, normalizeTextSource } from "./ingest";
-import { generateMcq } from "./llm";
+import { fetchSourceDeduped, normalizeTextSource, d1UrlSourceStore, resolveUrlSource } from "./ingest";
+import {
+  generateMcq,
+  normalizeLanguage,
+  sseEncode,
+  streamChatAboutQuestion,
+} from "./llm";
 import {
   DEFAULT_QUIZ_COUNT,
   MAX_QUIZ_COUNT,
@@ -44,29 +49,34 @@ app.post("/api/sources", async (c) => {
   }
 
   try {
-    const fetched =
-      body.type === "text"
-        ? normalizeTextSource(body.content ?? "")
-        : await fetchSource(c.env.BROWSER, body.url ?? "");
+    if (body.type === "url") {
+      const resolved = await resolveUrlSource(
+        d1UrlSourceStore(c.env.DB),
+        (url) => fetchSourceDeduped(c.env.BROWSER, url),
+        body.url ?? "",
+      );
+      return c.json({
+        sourceId: resolved.sourceId,
+        title: resolved.title,
+        truncated: resolved.truncated,
+        cached: resolved.cached,
+      });
+    }
 
+    const fetched = normalizeTextSource(body.content ?? "");
     const id = crypto.randomUUID();
     await c.env.DB.prepare(
       `INSERT INTO sources (id, type, title, body_md, url)
        VALUES (?, ?, ?, ?, ?)`,
     )
-      .bind(
-        id,
-        body.type,
-        fetched.title,
-        fetched.markdown,
-        body.type === "url" ? (body.url ?? null) : null,
-      )
+      .bind(id, "text", fetched.title, fetched.markdown, null)
       .run();
 
     return c.json({
       sourceId: id,
       title: fetched.title,
       truncated: fetched.truncated,
+      cached: false,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Ingest failed";
@@ -75,7 +85,11 @@ app.post("/api/sources", async (c) => {
 });
 
 app.post("/api/quizzes", async (c) => {
-  const body = await c.req.json<{ sourceId?: string; count?: number }>();
+  const body = await c.req.json<{
+    sourceId?: string;
+    count?: number;
+    language?: string;
+  }>();
   if (!body.sourceId) {
     return c.json({ error: "sourceId is required" }, 400);
   }
@@ -84,6 +98,7 @@ app.post("/api/quizzes", async (c) => {
     MAX_QUIZ_COUNT,
     Math.max(MIN_QUIZ_COUNT, Number(body.count) || DEFAULT_QUIZ_COUNT),
   );
+  const language = normalizeLanguage(body.language);
 
   const source = await c.env.DB.prepare(
     `SELECT id, type, title, body_md, url, created_at FROM sources WHERE id = ?`,
@@ -96,7 +111,7 @@ app.post("/api/quizzes", async (c) => {
   }
 
   try {
-    const questions = await generateMcq(c.env, source.body_md, count);
+    const questions = await generateMcq(c.env, source.body_md, count, language);
     const quizId = crypto.randomUUID();
 
     await c.env.DB.prepare(
@@ -127,6 +142,7 @@ app.post("/api/quizzes", async (c) => {
       sourceId: source.id,
       title: source.title,
       count: questions.length,
+      language,
     });
   } catch (err) {
     const message =
@@ -245,6 +261,99 @@ function gradeAnswers(
 
   return { graded, correct, total, score, weakTags };
 }
+
+/** Deeper Q&A about one question after answering (SSE stream). */
+app.post("/api/quizzes/:id/chat", async (c) => {
+  const quizId = c.req.param("id");
+  const body = await c.req.json<{
+    questionId?: string;
+    choice?: number;
+    language?: string;
+    messages?: Array<{ role?: string; content?: string }>;
+  }>();
+
+  if (!body.questionId) {
+    return c.json({ error: "questionId is required" }, 400);
+  }
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    return c.json({ error: "messages required" }, 400);
+  }
+
+  const history: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (const m of body.messages.slice(-12)) {
+    if (
+      (m.role === "user" || m.role === "assistant") &&
+      typeof m.content === "string" &&
+      m.content.trim()
+    ) {
+      history.push({ role: m.role, content: m.content.trim() });
+    }
+  }
+  if (history.length === 0 || history[history.length - 1]?.role !== "user") {
+    return c.json({ error: "messages must end with a user turn" }, 400);
+  }
+
+  const language = normalizeLanguage(body.language);
+
+  const quiz = await c.env.DB.prepare(
+    `SELECT q.id, q.source_id, s.body_md
+     FROM quizzes q JOIN sources s ON s.id = q.source_id
+     WHERE q.id = ?`,
+  )
+    .bind(quizId)
+    .first<{ id: string; source_id: string; body_md: string }>();
+
+  if (!quiz) return c.json({ error: "Quiz not found" }, 404);
+
+  const question = await c.env.DB.prepare(
+    `SELECT id, stem, options_json, correct_index, explanation, tags_json
+     FROM questions WHERE id = ? AND quiz_id = ?`,
+  )
+    .bind(body.questionId, quizId)
+    .first<QuestionRow>();
+
+  if (!question) return c.json({ error: "Question not found" }, 404);
+
+  const ctx = {
+    stem: question.stem,
+    options: JSON.parse(question.options_json) as string[],
+    correctIndex: question.correct_index,
+    explanation: question.explanation,
+    tags: JSON.parse(question.tags_json) as string[],
+    material: quiz.body_md,
+    userChoice: typeof body.choice === "number" ? body.choice : undefined,
+    language,
+  };
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        for await (const delta of streamChatAboutQuestion(
+          c.env,
+          ctx,
+          history,
+        )) {
+          controller.enqueue(encoder.encode(sseEncode({ delta })));
+        }
+        controller.enqueue(encoder.encode(sseEncode({ done: true })));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Chat failed";
+        controller.enqueue(encoder.encode(sseEncode({ error: message })));
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+});
 
 /** Immediate single-question feedback (no attempt row). */
 app.post("/api/quizzes/:id/check", async (c) => {

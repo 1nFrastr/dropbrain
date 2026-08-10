@@ -10,21 +10,29 @@
     "preview": "pnpm run build && vite preview",
     "cf-typegen": "wrangler types",
     "db:migrate:local": "wrangler d1 migrations apply dropbrain --local",
-    "check": "tsc -b && vite build"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "tsc -b && vitest run && vite build"
   },
   "dependencies": {
+    "highlight.js": "^11.11.1",
     "hono": "^4.11.1",
     "react": "^19.2.1",
-    "react-dom": "^19.2.1"
+    "react-dom": "^19.2.1",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.15.3",
     "@cloudflare/workers-types": "^5.20260810.1",
+    "@types/hast": "^3.0.5",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "typescript": "^5.9.3",
     "vite": "^7.0.0",
+    "vitest": "^4.1.10",
     "wrangler": "4.120.0"
   },
   "packageManager": "pnpm@10.26.0",

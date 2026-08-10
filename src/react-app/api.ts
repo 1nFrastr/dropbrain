@@ -1,4 +1,6 @@
 import { getOrCreateSessionId } from "./session";
+import type { AppLanguage } from "./i18n";
+import { consumeSseFrames } from "./sse";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const sessionId = getOrCreateSessionId();
@@ -20,6 +22,7 @@ export interface CreateSourceResponse {
   sourceId: string;
   title: string;
   truncated: boolean;
+  cached?: boolean;
 }
 
 export interface CreateQuizResponse {
@@ -27,6 +30,7 @@ export interface CreateQuizResponse {
   sourceId: string;
   title: string;
   count: number;
+  language?: AppLanguage;
 }
 
 export interface QuizQuestion {
@@ -77,10 +81,14 @@ export function createUrlSource(url: string) {
   });
 }
 
-export function createQuiz(sourceId: string, count: number) {
+export function createQuiz(
+  sourceId: string,
+  count: number,
+  language: AppLanguage,
+) {
   return api<CreateQuizResponse>("/api/quizzes", {
     method: "POST",
-    body: JSON.stringify({ sourceId, count }),
+    body: JSON.stringify({ sourceId, count, language }),
   });
 }
 
@@ -116,4 +124,68 @@ export function submitQuiz(
     method: "POST",
     body: JSON.stringify({ answers }),
   });
+}
+
+export type ChatTurn = { role: "user" | "assistant"; content: string };
+
+export async function streamChatAboutQuestion(
+  quizId: string,
+  questionId: string,
+  messages: ChatTurn[],
+  language: AppLanguage,
+  choice: number | undefined,
+  onDelta: (delta: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const sessionId = getOrCreateSessionId();
+  const res = await fetch(`/api/quizzes/${quizId}/chat`, {
+    method: "POST",
+    credentials: "same-origin",
+    signal,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Session-Id": sessionId,
+    },
+    body: JSON.stringify({ questionId, messages, choice, language }),
+  });
+
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const data = (await res.json()) as { error?: string };
+      if (data.error) message = data.error;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message);
+  }
+
+  if (!res.body) {
+    throw new Error("Empty chat stream");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const { rest, events } = consumeSseFrames(buffer);
+    buffer = rest;
+
+    for (const event of events) {
+      if (typeof event.error === "string" && event.error) {
+        throw new Error(event.error);
+      }
+      if (typeof event.delta === "string" && event.delta) {
+        full += event.delta;
+        onDelta(event.delta);
+      }
+    }
+  }
+
+  return full;
 }
