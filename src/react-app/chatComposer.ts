@@ -16,7 +16,14 @@ export function shouldSendOnEnter(
 /** True when the scroll container is near the bottom (sticky follow). */
 export function isNearBottom(
   el: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">,
-  thresholdPx = 80,
+  thresholdPx = 48,
 ): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= thresholdPx;
+}
+
+/** Pin scroll container to bottom without smooth animation. */
+export function pinToBottom(
+  el: Pick<HTMLElement, "scrollHeight" | "scrollTop">,
+): void {
+  el.scrollTop = el.scrollHeight;
 }

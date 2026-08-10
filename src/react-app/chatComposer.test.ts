@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isNearBottom, shouldSendOnEnter } from "./chatComposer";
+import { isNearBottom, pinToBottom, shouldSendOnEnter } from "./chatComposer";
 
 describe("shouldSendOnEnter", () => {
   it("sends on plain Enter", () => {
@@ -51,5 +51,13 @@ describe("isNearBottom", () => {
     expect(
       isNearBottom({ scrollHeight: 1000, scrollTop: 100, clientHeight: 80 }),
     ).toBe(false);
+  });
+});
+
+describe("pinToBottom", () => {
+  it("sets scrollTop to scrollHeight", () => {
+    const el = { scrollHeight: 500, scrollTop: 10 };
+    pinToBottom(el);
+    expect(el.scrollTop).toBe(500);
   });
 });

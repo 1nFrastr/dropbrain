@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   streamChatAboutQuestion,
   type ChatTurn,
 } from "./api";
 import ChatMarkdown from "./ChatMarkdown";
-import { isNearBottom, shouldSendOnEnter } from "./chatComposer";
+import { isNearBottom, pinToBottom, shouldSendOnEnter } from "./chatComposer";
 import {
   chatSuggestions,
   type AppLanguage,
@@ -42,6 +42,18 @@ export default function QuizChatSidebar({
   const abortRef = useRef<AbortController | null>(null);
   const stickToBottomRef = useRef(true);
   const composingRef = useRef(false);
+  const ignoringScrollRef = useRef(false);
+  const streamRafRef = useRef(0);
+  const streamPendingRef = useRef("");
+
+  function markProgrammaticScroll() {
+    ignoringScrollRef.current = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        ignoringScrollRef.current = false;
+      });
+    });
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -50,11 +62,13 @@ export default function QuizChatSidebar({
     return () => window.clearTimeout(id);
   }, [open, questionId]);
 
-  useEffect(() => {
-    if (!open) return;
+  // Pin before paint so token growth does not flash a jumped-away frame.
+  useLayoutEffect(() => {
+    if (!open || !stickToBottomRef.current) return;
     const el = listRef.current;
-    if (!el || !stickToBottomRef.current) return;
-    el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    markProgrammaticScroll();
+    pinToBottom(el);
   }, [open, messages, sending, streamingText]);
 
   useEffect(() => {
@@ -69,6 +83,7 @@ export default function QuizChatSidebar({
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      if (streamRafRef.current) cancelAnimationFrame(streamRafRef.current);
     };
   }, []);
 
@@ -82,6 +97,7 @@ export default function QuizChatSidebar({
     setDraft("");
     setSending(true);
     setStreamingText("");
+    streamPendingRef.current = "";
     setError(null);
     stickToBottomRef.current = true;
 
@@ -99,27 +115,51 @@ export default function QuizChatSidebar({
         choice,
         (delta) => {
           assembled += delta;
-          setStreamingText(assembled);
+          streamPendingRef.current = assembled;
+          if (streamRafRef.current) return;
+          streamRafRef.current = requestAnimationFrame(() => {
+            streamRafRef.current = 0;
+            setStreamingText(streamPendingRef.current);
+          });
         },
         controller.signal,
       );
-      const content = assembled || full;
-      if (!content.trim()) {
+      if (streamRafRef.current) {
+        cancelAnimationFrame(streamRafRef.current);
+        streamRafRef.current = 0;
+      }
+      const finalContent = (assembled || full).trim()
+        ? assembled || full
+        : "";
+      if (!finalContent.trim()) {
         throw new Error("Empty reply from assistant");
       }
-      onMessagesChange([...next, { role: "assistant", content }]);
+      // Flush final text into history and drop the live bubble in one turn.
       setStreamingText("");
+      streamPendingRef.current = "";
+      setSending(false);
+      stickToBottomRef.current = true;
+      onMessagesChange([...next, { role: "assistant", content: finalContent }]);
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (streamRafRef.current) {
+        cancelAnimationFrame(streamRafRef.current);
+        streamRafRef.current = 0;
+      }
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setStreamingText("");
+        streamPendingRef.current = "";
+        setSending(false);
+        return;
+      }
       setError(err instanceof Error ? err.message : "Chat failed");
+      setStreamingText("");
+      streamPendingRef.current = "";
+      setSending(false);
       if (assembled.trim()) {
         onMessagesChange([...next, { role: "assistant", content: assembled }]);
       } else {
         onMessagesChange(snapshot);
       }
-      setStreamingText("");
-    } finally {
-      setSending(false);
     }
   }
 
@@ -162,9 +202,29 @@ export default function QuizChatSidebar({
           className="chat-messages"
           ref={listRef}
           onScroll={() => {
+            if (ignoringScrollRef.current) return;
             const el = listRef.current;
             if (!el) return;
-            stickToBottomRef.current = isNearBottom(el);
+            // Asymmetric: leave stick quickly when leaving bottom; rejoin only when close.
+            const distance =
+              el.scrollHeight - el.scrollTop - el.clientHeight;
+            if (stickToBottomRef.current) {
+              if (distance > 24) stickToBottomRef.current = false;
+            } else if (distance <= 16) {
+              stickToBottomRef.current = true;
+            }
+          }}
+          onWheel={(e) => {
+            // Release stick immediately on scroll-up so the next token cannot yank back.
+            if (e.deltaY < 0) {
+              stickToBottomRef.current = false;
+              return;
+            }
+            requestAnimationFrame(() => {
+              const el = listRef.current;
+              if (!el || ignoringScrollRef.current) return;
+              if (isNearBottom(el, 16)) stickToBottomRef.current = true;
+            });
           }}
         >
           {messages.length === 0 && !sending && (
@@ -204,11 +264,12 @@ export default function QuizChatSidebar({
 
           {sending && (
             <div
-              className={`chat-bubble assistant${streamingText.trim() ? "" : " pending"}`}
-              aria-live="polite"
+              className={`chat-bubble assistant streaming${streamingText.trim() ? "" : " pending"}`}
+              aria-live="off"
             >
               {streamingText.trim() ? (
-                <ChatMarkdown>{streamingText}</ChatMarkdown>
+                // Plain text while streaming avoids Markdown height thrash per token.
+                <div className="chat-stream-plain">{streamingText}</div>
               ) : (
                 <span className="chat-typing" aria-label="Thinking">
                   <span />
@@ -218,6 +279,7 @@ export default function QuizChatSidebar({
               )}
             </div>
           )}
+          <div className="chat-scroll-anchor" aria-hidden="true" />
         </div>
 
         {error && <p className="chat-error">{error}</p>}

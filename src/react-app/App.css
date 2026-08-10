@@ -54,24 +54,24 @@
 
 .tab[aria-selected="true"] {
   background: var(--ink);
-  color: #f7f3ee;
+  color: var(--on-ink);
   border-color: var(--ink);
 }
 
 .field {
   width: 100%;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--surface);
   border-radius: 14px;
   padding: 1rem 1.1rem;
   color: var(--ink);
   resize: vertical;
   min-height: 180px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 1px 0 var(--surface-shine);
 }
 
 .field:focus {
-  outline: 2px solid rgba(15, 122, 108, 0.35);
+  outline: 2px solid var(--focus-ring);
   border-color: transparent;
 }
 
@@ -96,7 +96,7 @@
 
 .control select {
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--surface-solid);
   border-radius: 10px;
   padding: 0.65rem 0.8rem;
   color: var(--ink);
@@ -105,7 +105,7 @@
 .cta {
   border: none;
   background: var(--accent);
-  color: #f5fffc;
+  color: var(--on-accent);
   border-radius: 12px;
   padding: 0.8rem 1.35rem;
   font-weight: 600;
@@ -114,7 +114,7 @@
 
 .cta:hover:not(:disabled) {
   transform: translateY(-1px);
-  background: #0c685c;
+  background: var(--accent-hover);
 }
 
 .cta:disabled {
@@ -200,14 +200,14 @@
 .option {
   text-align: left;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--surface);
   border-radius: 12px;
   padding: 0.95rem 1rem;
   transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
 
 .option:hover:not(:disabled) {
-  border-color: rgba(15, 122, 108, 0.45);
+  border-color: var(--accent-border);
   transform: translateX(2px);
 }
 
@@ -218,12 +218,12 @@
 
 .option.correct {
   border-color: var(--ok);
-  background: rgba(31, 122, 77, 0.12);
+  background: var(--ok-soft);
 }
 
 .option.wrong {
   border-color: var(--bad);
-  background: rgba(179, 58, 58, 0.1);
+  background: var(--bad-soft);
 }
 
 .feedback {
@@ -274,7 +274,7 @@
   border: none;
   padding: 0;
   margin: 0;
-  background: rgba(27, 58, 75, 0.28);
+  background: var(--backdrop);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.28s ease;
@@ -294,7 +294,7 @@
   flex-direction: column;
   width: min(400px, 100%);
   height: 100%;
-  background: rgba(250, 247, 242, 0.96);
+  background: var(--sidebar);
   border-left: 1px solid var(--line);
   box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
@@ -360,10 +360,17 @@
 .chat-messages {
   flex: 1;
   overflow-y: auto;
+  overflow-anchor: none;
   padding: 0.25rem 1.25rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
+}
+
+.chat-scroll-anchor {
+  height: 1px;
+  flex: 0 0 auto;
+  overflow-anchor: auto;
 }
 
 .chat-empty {
@@ -385,7 +392,7 @@
 .chat-suggestion {
   text-align: left;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--surface);
   color: var(--ink);
   border-radius: 12px;
   padding: 0.7rem 0.85rem;
@@ -394,7 +401,7 @@
 }
 
 .chat-suggestion:hover:not(:disabled) {
-  border-color: rgba(15, 122, 108, 0.45);
+  border-color: var(--accent-border);
   background: var(--accent-soft);
 }
 
@@ -410,14 +417,14 @@
 .chat-bubble.user {
   align-self: flex-end;
   background: var(--ink);
-  color: #f7f3ee;
+  color: var(--on-ink);
   border-bottom-right-radius: 5px;
   white-space: pre-wrap;
 }
 
 .chat-bubble.assistant {
   align-self: flex-start;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--surface-strong);
   border: 1px solid var(--line);
   border-bottom-left-radius: 5px;
   white-space: normal;
@@ -428,6 +435,16 @@
   min-height: 2.4rem;
   display: inline-flex;
   align-items: center;
+}
+
+.chat-bubble.streaming {
+  animation: none;
+}
+
+.chat-stream-plain {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
 }
 
 .chat-typing {
@@ -496,14 +513,14 @@
 .chat-md :not(pre) > code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.88em;
-  background: rgba(27, 58, 75, 0.08);
+  background: var(--code-inline-bg);
   padding: 0.1em 0.35em;
   border-radius: 4px;
 }
 
 .chat-md pre {
   overflow-x: auto;
-  background: #f6f8fa;
+  background: var(--code-bg);
   padding: 0.65rem 0.75rem;
   border-radius: 8px;
   border: 1px solid var(--line);
@@ -532,7 +549,7 @@
 
 .chat-bubble.user .chat-md code,
 .chat-bubble.user .chat-md pre {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--chip-on-ink);
 }
 
 .chat-error {
@@ -548,13 +565,13 @@
   align-items: end;
   padding: 0.85rem 1.25rem 1.25rem;
   border-top: 1px solid var(--line);
-  background: rgba(247, 243, 238, 0.85);
+  background: var(--composer);
 }
 
 .chat-input {
   width: 100%;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--surface-solid);
   border-radius: 12px;
   padding: 0.7rem 0.85rem;
   color: var(--ink);
@@ -563,7 +580,7 @@
 }
 
 .chat-input:focus {
-  outline: 2px solid rgba(15, 122, 108, 0.35);
+  outline: 2px solid var(--focus-ring);
   border-color: transparent;
 }
 
@@ -606,7 +623,7 @@
 }
 
 .tag {
-  background: rgba(27, 58, 75, 0.08);
+  background: var(--code-inline-bg);
   color: var(--ink);
   padding: 0.3rem 0.65rem;
   border-radius: 999px;
@@ -651,7 +668,7 @@
     box-shadow: 0 0 0 4px var(--accent-soft);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(15, 122, 108, 0.08);
+    box-shadow: 0 0 0 8px var(--progress-glow);
   }
 }
 
