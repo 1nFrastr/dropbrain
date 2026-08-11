@@ -1,4 +1,4 @@
-import { MAX_BODY_CHARS } from "./types";
+import { MAX_BODY_CHARS, SOURCE_URL_CACHE_TTL_DAYS } from "./types";
 
 export interface FetchedSource {
   title: string;
@@ -10,6 +10,7 @@ export type CachedSourceRow = {
   id: string;
   title: string;
   body_md: string;
+  created_at: string;
 };
 
 export type UrlSourceStore = {
@@ -21,6 +22,26 @@ export type UrlSourceStore = {
     url: string;
   }) => Promise<void>;
 };
+
+export type ResolveUrlSourceOptions = {
+  /** When false, always re-fetch and insert a new source row. Default true. */
+  useCache?: boolean;
+  /** Injectable clock for tests (unix ms). */
+  nowMs?: () => number;
+};
+
+/** Whether a cached URL source is still within the configured TTL. */
+export function isUrlSourceCacheFresh(
+  createdAt: string,
+  nowMs: number = Date.now(),
+  ttlDays: number = SOURCE_URL_CACHE_TTL_DAYS,
+): boolean {
+  const createdMs = Date.parse(
+    /Z$|[+-]\d{2}:?\d{2}$/.test(createdAt) ? createdAt : `${createdAt}Z`,
+  );
+  if (Number.isNaN(createdMs)) return false;
+  return nowMs - createdMs < ttlDays * 24 * 60 * 60 * 1000;
+}
 
 /** Canonical URL used as the cache key for page fetches. */
 export function normalizePageUrl(raw: string): string {
@@ -192,34 +213,42 @@ export async function resolveUrlSource(
   fetchPage: (url: string) => Promise<FetchedSource>,
   rawUrl: string,
   newId: () => string = () => crypto.randomUUID(),
+  options: ResolveUrlSourceOptions = {},
 ): Promise<{
   sourceId: string;
   title: string;
   truncated: boolean;
   cached: boolean;
 }> {
+  const useCache = options.useCache !== false;
+  const nowMs = options.nowMs ?? Date.now;
   const url = normalizePageUrl(rawUrl);
-  const existing = await store.findByUrl(url);
-  if (existing) {
-    return {
-      sourceId: existing.id,
-      title: existing.title,
-      truncated: isTruncatedBody(existing.body_md),
-      cached: true,
-    };
+
+  if (useCache) {
+    const existing = await store.findByUrl(url);
+    if (existing && isUrlSourceCacheFresh(existing.created_at, nowMs())) {
+      return {
+        sourceId: existing.id,
+        title: existing.title,
+        truncated: isTruncatedBody(existing.body_md),
+        cached: true,
+      };
+    }
   }
 
   const fetched = await fetchPage(url);
 
-  // Another request may have inserted while we were fetching.
-  const raced = await store.findByUrl(url);
-  if (raced) {
-    return {
-      sourceId: raced.id,
-      title: raced.title,
-      truncated: isTruncatedBody(raced.body_md),
-      cached: true,
-    };
+  // Another request may have inserted a fresh row while we were fetching.
+  if (useCache) {
+    const raced = await store.findByUrl(url);
+    if (raced && isUrlSourceCacheFresh(raced.created_at, nowMs())) {
+      return {
+        sourceId: raced.id,
+        title: raced.title,
+        truncated: isTruncatedBody(raced.body_md),
+        cached: true,
+      };
+    }
   }
 
   const id = newId();
@@ -244,12 +273,13 @@ export function d1UrlSourceStore(db: D1Database): UrlSourceStore {
       return (
         (await db
           .prepare(
-            `SELECT id, title, body_md FROM sources
+            `SELECT id, title, body_md, created_at FROM sources
              WHERE type = 'url' AND url = ?
+               AND created_at >= datetime('now', ?)
              ORDER BY created_at DESC
              LIMIT 1`,
           )
-          .bind(url)
+          .bind(url, `-${SOURCE_URL_CACHE_TTL_DAYS} days`)
           .first<CachedSourceRow>()) ?? null
       );
     },

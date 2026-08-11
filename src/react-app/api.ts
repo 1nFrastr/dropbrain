@@ -74,10 +74,14 @@ export function createTextSource(content: string) {
   });
 }
 
-export function createUrlSource(url: string) {
+export function createUrlSource(url: string, options: { useCache?: boolean } = {}) {
   return api<CreateSourceResponse>("/api/sources", {
     method: "POST",
-    body: JSON.stringify({ type: "url", url }),
+    body: JSON.stringify({
+      type: "url",
+      url,
+      useCache: options.useCache !== false,
+    }),
   });
 }
 

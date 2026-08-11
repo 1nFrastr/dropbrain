@@ -43,6 +43,7 @@ app.post("/api/sources", async (c) => {
     type?: string;
     content?: string;
     url?: string;
+    useCache?: boolean;
   }>();
 
   if (body.type !== "text" && body.type !== "url") {
@@ -55,6 +56,8 @@ app.post("/api/sources", async (c) => {
         d1UrlSourceStore(c.env.DB),
         (url) => fetchSourceDeduped(c.env.BROWSER, url),
         body.url ?? "",
+        () => crypto.randomUUID(),
+        { useCache: body.useCache !== false },
       );
       return c.json({
         sourceId: resolved.sourceId,

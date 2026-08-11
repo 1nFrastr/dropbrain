@@ -46,6 +46,7 @@ export default function HomePage() {
   const [tab, setTab] = useState<Tab>("text");
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
+  const [useCache, setUseCache] = useState(true);
   const [count, setCount] = useState(8);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -90,7 +91,7 @@ export default function HomePage() {
       const source =
         tab === "text"
           ? await createTextSource(text)
-          : await createUrlSource(url.trim());
+          : await createUrlSource(url.trim(), { useCache });
 
       setGenPhase("writing");
       const created = await createQuiz(source.sourceId, count, contentLang);
@@ -224,14 +225,24 @@ export default function HomePage() {
               aria-label="Text to learn"
             />
           ) : (
-            <input
-              className="field url"
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com/article"
-              aria-label="Page URL"
-            />
+            <div className="url-fields">
+              <input
+                className="field url"
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://example.com/article"
+                aria-label="Page URL"
+              />
+              <label className="cache-toggle">
+                <input
+                  type="checkbox"
+                  checked={useCache}
+                  onChange={(e) => setUseCache(e.target.checked)}
+                />
+                <span>Use cached page when available (10 days)</span>
+              </label>
+            </div>
           )}
 
           <div className="controls">
