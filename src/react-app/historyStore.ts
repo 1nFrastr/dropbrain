@@ -1,5 +1,6 @@
 import type { AppLanguage } from "./i18n";
 import type {
+  AnswerKeyEntry,
   ChatTurn,
   QuizPayload,
   SubmitResponse,
@@ -15,6 +16,12 @@ export type QuestionReveal = {
   correctIndex: number;
 };
 
+export type AnswerKeyItem = {
+  correctIndex: number;
+  explanation: string;
+  tags: string[];
+};
+
 export type QuizSessionRecord = {
   id: string;
   title: string;
@@ -23,6 +30,8 @@ export type QuizSessionRecord = {
   createdAt: number;
   updatedAt: number;
   quiz: QuizPayload;
+  /** Local answer key for offline grading (stripped from quiz.questions). */
+  answerKey: Record<string, AnswerKeyItem>;
   index: number;
   choices: Record<string, number>;
   reveals: Record<string, QuestionReveal>;
@@ -68,6 +77,34 @@ export function answeredCount(choices: Record<string, number>): number {
   return Object.keys(choices).length;
 }
 
+export function toAnswerKeyMap(
+  entries: AnswerKeyEntry[] | undefined,
+): Record<string, AnswerKeyItem> {
+  const out: Record<string, AnswerKeyItem> = {};
+  for (const entry of entries ?? []) {
+    out[entry.questionId] = {
+      correctIndex: entry.correctIndex,
+      explanation: entry.explanation,
+      tags: entry.tags,
+    };
+  }
+  return out;
+}
+
+/** True when every question has a local answer key entry. */
+export function hasCompleteAnswerKey(session: QuizSessionRecord): boolean {
+  return session.quiz.questions.every((q) => session.answerKey[q.id] != null);
+}
+
+function normalizeSession(row: QuizSessionRecord): QuizSessionRecord {
+  const { answerKey: _discard, ...quiz } = row.quiz;
+  return {
+    ...row,
+    quiz,
+    answerKey: row.answerKey ?? {},
+  };
+}
+
 export function toHistoryItem(session: QuizSessionRecord): QuizHistoryItem {
   return {
     id: session.id,
@@ -86,6 +123,7 @@ export function createSessionRecord(
   language: AppLanguage,
   now = Date.now(),
 ): QuizSessionRecord {
+  const { answerKey: entries, ...publicQuiz } = quiz;
   return {
     id: quiz.id,
     title: quiz.title,
@@ -93,7 +131,8 @@ export function createSessionRecord(
     language,
     createdAt: now,
     updatedAt: now,
-    quiz,
+    quiz: publicQuiz,
+    answerKey: toAnswerKeyMap(entries),
     index: 0,
     choices: {},
     reveals: {},
@@ -106,7 +145,7 @@ export function createSessionRecord(
 export async function putQuizSession(
   session: QuizSessionRecord,
 ): Promise<QuizSessionRecord> {
-  const next = { ...session, updatedAt: Date.now() };
+  const next = normalizeSession({ ...session, updatedAt: Date.now() });
   const db = await openDb();
   try {
     const tx = db.transaction(STORE, "readwrite");
@@ -124,7 +163,8 @@ export async function getQuizSession(
   try {
     const tx = db.transaction(STORE, "readonly");
     const row = await reqToPromise(tx.objectStore(STORE).get(id));
-    return (row as QuizSessionRecord | undefined) ?? null;
+    if (!row) return null;
+    return normalizeSession(row as QuizSessionRecord);
   } finally {
     db.close();
   }
@@ -135,7 +175,9 @@ export async function listQuizHistory(): Promise<QuizHistoryItem[]> {
   try {
     const tx = db.transaction(STORE, "readonly");
     const rows = await reqToPromise(tx.objectStore(STORE).getAll());
-    const items = (rows as QuizSessionRecord[]).map(toHistoryItem);
+    const items = (rows as QuizSessionRecord[])
+      .map((row) => normalizeSession(row))
+      .map(toHistoryItem);
     items.sort((a, b) => b.updatedAt - a.updatedAt);
     return items;
   } finally {

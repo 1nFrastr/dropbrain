@@ -334,6 +334,17 @@
   margin-top: 0.95rem;
 }
 
+.ask-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.offline-hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
 .nav-row {
   display: flex;
   justify-content: flex-end;
@@ -605,10 +616,46 @@ a.ghost {
 
 .chat-bubble.assistant {
   align-self: flex-start;
+  position: relative;
   background: var(--surface-strong);
   border: 1px solid var(--line);
   border-bottom-left-radius: 5px;
   white-space: normal;
+}
+
+.chat-bubble-actions {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.35rem;
+  display: flex;
+}
+
+.chat-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--ink-soft);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.chat-bubble.assistant:hover .chat-copy,
+.chat-bubble.assistant:focus-within .chat-copy,
+.chat-copy:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chat-copy:hover,
+.chat-copy:focus-visible {
+  color: var(--ink);
+  border-color: var(--accent-border);
 }
 
 .chat-bubble.pending {

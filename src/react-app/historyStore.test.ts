@@ -49,7 +49,20 @@ describe("historyStore", () => {
   });
 
   it("round-trips progress fields", async () => {
-    const base = createSessionRecord(quiz, "zh");
+    const base = createSessionRecord(
+      {
+        ...quiz,
+        answerKey: [
+          {
+            questionId: "q1",
+            correctIndex: 2,
+            explanation: "Yes",
+            tags: [],
+          },
+        ],
+      },
+      "zh",
+    );
     const saved = await putQuizSession({
       ...base,
       index: 1,
@@ -68,6 +81,8 @@ describe("historyStore", () => {
     expect(loaded?.reveals.q1?.correctIndex).toBe(2);
     expect(loaded?.chatByQuestion.q1?.[0]?.content).toBe("why?");
     expect(loaded?.language).toBe("zh");
+    expect(loaded?.answerKey.q1?.correctIndex).toBe(2);
+    expect(loaded?.quiz.answerKey).toBeUndefined();
   });
 
   it("deletes sessions", async () => {

@@ -51,11 +51,20 @@ export interface QuizQuestion {
   tags: string[];
 }
 
+export interface AnswerKeyEntry {
+  questionId: string;
+  correctIndex: number;
+  explanation: string;
+  tags: string[];
+}
+
 export interface QuizPayload {
   id: string;
   sourceId: string;
   title: string;
   questions: QuizQuestion[];
+  /** Present after download so the client can grade without the network. */
+  answerKey?: AnswerKeyEntry[];
 }
 
 export interface GradedResult {

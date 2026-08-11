@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { SendHorizontal, X } from "lucide-react";
+import { Check, Copy, SendHorizontal, X } from "lucide-react";
 import type { ChatTurn } from "./api";
 import ChatMarkdown from "./ChatMarkdown";
 import { isNearBottom, pinToBottom, shouldSendOnEnter } from "./chatComposer";
@@ -47,6 +47,8 @@ export default function ChatSidebar({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -94,8 +96,20 @@ export default function ChatSidebar({
     return () => {
       abortRef.current?.abort();
       if (streamRafRef.current) cancelAnimationFrame(streamRafRef.current);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
     };
   }, []);
+
+  async function copyAssistantMessage(index: number, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIndex(index);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setCopiedIndex(null), 1500);
+    } catch {
+      setError("Copy failed");
+    }
+  }
 
   async function send(text: string) {
     const content = text.trim();
@@ -261,13 +275,26 @@ export default function ChatSidebar({
 
           {messages.map((m, i) => {
             if (!m.content.trim()) return null;
+            const copied = copiedIndex === i;
             return (
               <div
                 key={`${m.role}-${i}`}
                 className={`chat-bubble ${m.role}`}
               >
                 {m.role === "assistant" ? (
-                  <ChatMarkdown>{m.content}</ChatMarkdown>
+                  <>
+                    <ChatMarkdown>{m.content}</ChatMarkdown>
+                    <div className="chat-bubble-actions">
+                      <button
+                        type="button"
+                        className="chat-copy"
+                        aria-label={copied ? "Copied" : "Copy reply"}
+                        onClick={() => void copyAssistantMessage(i, m.content)}
+                      >
+                        {copied ? <Check size={14} /> : <Copy size={14} />}
+                      </button>
+                    </div>
+                  </>
                 ) : (
                   m.content
                 )}

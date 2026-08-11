@@ -16,19 +16,24 @@ import {
 import {
   createSessionRecord,
   getQuizSession,
+  hasCompleteAnswerKey,
   putQuizSession,
+  toAnswerKeyMap,
   type QuestionReveal,
   type QuizSessionRecord,
 } from "./historyStore";
 import { resolveInitialLanguage } from "./i18n";
+import { checkAnswerLocally, submitQuizLocally } from "./localGrade";
 import QuizChatSidebar from "./QuizChatSidebar";
 import ResultsView from "./ResultsView";
+import { useOnlineStatus } from "./useOnlineStatus";
 
 const LETTERS = ["A", "B", "C", "D"] as const;
 
 export default function QuizPage() {
   const { quizId = "" } = useParams();
   const navigate = useNavigate();
+  const online = useOnlineStatus();
   const [session, setSession] = useState<QuizSessionRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,9 +52,28 @@ export default function QuizPage() {
       try {
         const local = await getQuizSession(quizId);
         if (local) {
+          let next = local;
+          if (!hasCompleteAnswerKey(local)) {
+            try {
+              const remote = await getQuiz(quizId);
+              next = await putQuizSession({
+                ...local,
+                answerKey: {
+                  ...local.answerKey,
+                  ...toAnswerKeyMap(remote.answerKey),
+                },
+              });
+            } catch {
+              /* keep session; check/submit may fall back to API when online */
+            }
+          }
           if (cancelled) return;
-          setSession(local);
-          setView(local.status === "completed" && local.submitResult ? "results" : "quiz");
+          setSession(next);
+          setView(
+            next.status === "completed" && next.submitResult
+              ? "results"
+              : "quiz",
+          );
           return;
         }
 
@@ -125,7 +149,30 @@ export default function QuizPage() {
     setBusy(true);
     setError(null);
     try {
-      const graded = await checkAnswerApi(quiz.id, current.id, choice);
+      const local = checkAnswerLocally(session, current.id, choice);
+      if (!local && !online) {
+        throw new Error(
+          "This quiz needs a network connection once to unlock offline grading.",
+        );
+      }
+
+      let graded = local;
+      if (!graded) {
+        const remote = await checkAnswerApi(quiz.id, current.id, choice);
+        patchSession((prev) => ({
+          ...prev,
+          answerKey: {
+            ...prev.answerKey,
+            [current.id]: {
+              correctIndex: remote.correctIndex,
+              explanation: remote.explanation,
+              tags: remote.tags,
+            },
+          },
+        }));
+        graded = remote;
+      }
+
       patchSession((prev) => ({
         ...prev,
         choices: { ...prev.choices, [current.id]: choice },
@@ -167,7 +214,36 @@ export default function QuizPage() {
         questionId: q.id,
         choice: session.choices[q.id] ?? -1,
       }));
-      const result = await submitQuiz(quiz.id, answers);
+
+      const localResult = submitQuizLocally(session, answers);
+      if (!localResult && !online) {
+        throw new Error(
+          "This quiz needs a network connection once to unlock offline grading.",
+        );
+      }
+      let result = localResult;
+      if (!result) {
+        result = await submitQuiz(quiz.id, answers);
+      } else if (online) {
+        void submitQuiz(quiz.id, answers)
+          .then((remote) => {
+            setSession((prev) =>
+              prev?.submitResult
+                ? {
+                    ...prev,
+                    submitResult: {
+                      ...prev.submitResult,
+                      attemptId: remote.attemptId,
+                    },
+                  }
+                : prev,
+            );
+          })
+          .catch(() => {
+            /* local result is authoritative when offline-capable */
+          });
+      }
+
       const next: QuizSessionRecord = {
         ...session,
         status: "completed",
@@ -275,11 +351,16 @@ export default function QuizPage() {
             <button
               type="button"
               className="ghost ask-btn btn-with-icon"
+              disabled={!online}
+              title={online ? undefined : "Needs a network connection"}
               onClick={() => setChatOpen(true)}
             >
               <MessageCircle size={16} strokeWidth={2} aria-hidden="true" />
               Ask about this
             </button>
+            {!online && (
+              <p className="offline-hint">Chat needs a network connection.</p>
+            )}
           </div>
         )}
 
@@ -344,6 +425,7 @@ export default function QuizPage() {
           choice={choices[current.id]}
           language={session.language}
           messages={chatMessages}
+          online={online}
           onMessagesChange={(messages: ChatTurn[]) =>
             patchSession((prev) => ({
               ...prev,

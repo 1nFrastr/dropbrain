@@ -16,6 +16,11 @@ import {
   streamChatAboutQuestion,
 } from "./llm";
 import {
+  checkChoice,
+  gradeAnswers,
+  type GradeQuestion,
+} from "../shared/grade";
+import {
   DEFAULT_QUIZ_COUNT,
   MAX_QUIZ_COUNT,
   MIN_QUIZ_COUNT,
@@ -23,6 +28,17 @@ import {
   type QuestionRow,
   type SourceRow,
 } from "./types";
+
+function toGradeQuestion(row: QuestionRow): GradeQuestion {
+  return {
+    id: row.id,
+    stem: row.stem,
+    options: JSON.parse(row.options_json) as string[],
+    correctIndex: row.correct_index,
+    explanation: row.explanation,
+    tags: JSON.parse(row.tags_json) as string[],
+  };
+}
 
 type AppEnv = { Bindings: Env };
 
@@ -186,17 +202,24 @@ app.get("/api/quizzes/:id", async (c) => {
   }
 
   const { results } = await c.env.DB.prepare(
-    `SELECT id, stem, options_json, tags_json FROM questions WHERE quiz_id = ?`,
+    `SELECT id, stem, options_json, correct_index, explanation, tags_json
+     FROM questions WHERE quiz_id = ?`,
   )
     .bind(quizId)
-    .all<Pick<QuestionRow, "id" | "stem" | "options_json" | "tags_json">>();
+    .all<QuestionRow>();
 
-  const questions: PublicQuestion[] = (
-    results ?? ([] as Array<Pick<QuestionRow, "id" | "stem" | "options_json" | "tags_json">>)
-  ).map((row) => ({
+  const rows = results ?? [];
+  const questions: PublicQuestion[] = rows.map((row) => ({
     id: row.id,
     stem: row.stem,
     options: JSON.parse(row.options_json) as string[],
+    tags: JSON.parse(row.tags_json) as string[],
+  }));
+  // Included so the client can grade offline after the first download.
+  const answerKey = rows.map((row) => ({
+    questionId: row.id,
+    correctIndex: row.correct_index,
+    explanation: row.explanation,
     tags: JSON.parse(row.tags_json) as string[],
   }));
 
@@ -205,6 +228,7 @@ app.get("/api/quizzes/:id", async (c) => {
     sourceId: quiz.source_id,
     title: quiz.source_title,
     questions,
+    answerKey,
   });
 });
 
@@ -224,57 +248,6 @@ async function loadQuizQuestions(db: D1Database, quizId: string) {
     .all<QuestionRow>();
 
   return { quiz, questions: results ?? [] };
-}
-
-function gradeAnswers(
-  questions: QuestionRow[],
-  answers: Array<{ questionId: string; choice: number }>,
-) {
-  const byId = new Map(questions.map((q) => [q.id, q]));
-  let correct = 0;
-  const graded = answers.map((a) => {
-    const q = byId.get(a.questionId);
-    if (!q) {
-      return {
-        questionId: a.questionId,
-        choice: a.choice,
-        correct: false,
-        correctIndex: -1,
-        stem: "",
-        options: [] as string[],
-        explanation: "Question not found",
-        tags: [] as string[],
-      };
-    }
-    const isCorrect = a.choice === q.correct_index;
-    if (isCorrect) correct += 1;
-    return {
-      questionId: q.id,
-      choice: a.choice,
-      correct: isCorrect,
-      correctIndex: q.correct_index,
-      stem: q.stem,
-      options: JSON.parse(q.options_json) as string[],
-      explanation: q.explanation,
-      tags: JSON.parse(q.tags_json) as string[],
-    };
-  });
-
-  const total = graded.length;
-  const score = total === 0 ? 0 : correct / total;
-  const weakTagCounts = new Map<string, number>();
-  for (const g of graded) {
-    if (!g.correct) {
-      for (const tag of g.tags) {
-        weakTagCounts.set(tag, (weakTagCounts.get(tag) ?? 0) + 1);
-      }
-    }
-  }
-  const weakTags = [...weakTagCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([tag, misses]) => ({ tag, misses }));
-
-  return { graded, correct, total, score, weakTags };
 }
 
 /** Open-ended study chat from the home page (SSE stream). */
@@ -436,15 +409,7 @@ app.post("/api/quizzes/:id/check", async (c) => {
   const q = loaded.questions.find((row: QuestionRow) => row.id === body.questionId);
   if (!q) return c.json({ error: "Question not found" }, 404);
 
-  const isCorrect = body.choice === q.correct_index;
-  return c.json({
-    questionId: q.id,
-    choice: body.choice,
-    correct: isCorrect,
-    correctIndex: q.correct_index,
-    explanation: q.explanation,
-    tags: JSON.parse(q.tags_json) as string[],
-  });
+  return c.json(checkChoice(toGradeQuestion(q), body.choice));
 });
 
 app.post("/api/quizzes/:id/submit", async (c) => {
@@ -466,7 +431,7 @@ app.post("/api/quizzes/:id/submit", async (c) => {
   if (!loaded) return c.json({ error: "Quiz not found" }, 404);
 
   const { graded, correct, total, score, weakTags } = gradeAnswers(
-    loaded.questions,
+    loaded.questions.map(toGradeQuestion),
     body.answers,
   );
 
