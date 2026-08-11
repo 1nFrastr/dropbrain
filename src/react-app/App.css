@@ -32,6 +32,42 @@
   line-height: 1.5;
 }
 
+.ask-fab {
+  position: fixed;
+  right: max(1.25rem, env(safe-area-inset-right));
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 10px 28px rgba(15, 122, 108, 0.28);
+  transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.ask-fab:hover {
+  transform: translateY(-2px) scale(1.03);
+  background: var(--accent-hover);
+  box-shadow: 0 14px 32px rgba(15, 122, 108, 0.34);
+}
+
+.ask-fab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
 .panel {
   margin-top: 2.25rem;
   animation: rise 0.75s ease 0.14s both;
@@ -44,6 +80,9 @@
 }
 
 .tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   border: 1px solid var(--line);
   background: transparent;
   color: var(--ink-soft);
@@ -371,7 +410,14 @@ a.ghost {
   font-size: 0.85rem;
 }
 
-.history-delete {
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-right: 0.35rem;
+}
+
+.history-action {
   padding: 0.55rem 0.75rem;
   font-size: 0.85rem;
 }
@@ -446,14 +492,15 @@ a.ghost {
 }
 
 .chat-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--line);
   background: transparent;
   color: var(--ink-soft);
   width: 2.1rem;
   height: 2.1rem;
   border-radius: 10px;
-  font-size: 1.35rem;
-  line-height: 1;
   flex: 0 0 auto;
 }
 
@@ -554,10 +601,31 @@ a.ghost {
   animation: none;
 }
 
-.chat-stream-plain {
-  white-space: pre-wrap;
+.chat-md.streaming {
   word-break: break-word;
-  line-height: 1.5;
+}
+
+.chat-bubble.streaming .chat-md.streaming::after {
+  content: "";
+  display: inline-block;
+  width: 0.45em;
+  height: 1em;
+  margin-left: 0.12em;
+  vertical-align: -0.12em;
+  background: var(--accent);
+  opacity: 0.7;
+  animation: chat-caret 1s steps(1) infinite;
+}
+
+@keyframes chat-caret {
+  0%,
+  49% {
+    opacity: 0.75;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .chat-typing {
@@ -790,6 +858,13 @@ a.ghost {
     padding-top: 1.75rem;
   }
 
+  .ask-fab {
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    width: 3.25rem;
+    height: 3.25rem;
+  }
+
   .controls {
     flex-direction: column;
     align-items: stretch;
@@ -813,8 +888,12 @@ a.ghost {
     grid-template-columns: 1fr;
   }
 
-  .history-delete {
-    width: 100%;
+  .history-actions {
+    padding: 0 0.35rem 0.35rem;
+  }
+
+  .history-action {
+    flex: 1;
   }
 
   .chat-sidebar {

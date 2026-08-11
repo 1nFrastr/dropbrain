@@ -1,21 +1,36 @@
 import { useEffect, useState } from "react";
+import {
+  Download,
+  FileText,
+  Link2,
+  MessageCircle,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   createQuiz,
   createTextSource,
   createUrlSource,
   getQuiz,
+  streamAskAnything,
+  type ChatTurn,
 } from "./api";
+import ChatSidebar from "./ChatSidebar";
 import {
+  askAnythingSuggestions,
   contentLanguageLabel,
   resolveInitialLanguage,
   saveLanguage,
   type AppLanguage,
 } from "./i18n";
+import { exportQuizSession } from "./exportQuiz";
 import {
   createSessionRecord,
   deleteQuizSession,
   formatHistoryWhen,
+  getQuizSession,
   historyStatusLabel,
   listQuizHistory,
   putQuizSession,
@@ -38,6 +53,8 @@ export default function HomePage() {
   const [genPhase, setGenPhase] = useState<GenPhase>("idle");
   const [history, setHistory] = useState<QuizHistoryItem[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [askOpen, setAskOpen] = useState(false);
+  const [askMessages, setAskMessages] = useState<ChatTurn[]>([]);
 
   useEffect(() => {
     setContentLang(resolveInitialLanguage());
@@ -99,6 +116,22 @@ export default function HomePage() {
     await refreshHistory();
   }
 
+  async function onExport(id: string) {
+    try {
+      const session = await getQuizSession(id);
+      if (!session) {
+        setHistoryError("Quiz not found in local history.");
+        return;
+      }
+      await exportQuizSession(session);
+      setHistoryError(null);
+    } catch (err) {
+      setHistoryError(
+        err instanceof Error ? err.message : "Could not export quiz",
+      );
+    }
+  }
+
   if (generating) {
     return (
       <div className="app">
@@ -137,7 +170,19 @@ export default function HomePage() {
   }
 
   return (
-    <div className="app">
+    <div className={`app${askOpen ? " chat-open" : ""}`}>
+      {!askOpen && (
+        <button
+          type="button"
+          className="ask-fab"
+          aria-label="Ask anything"
+          title="Ask anything"
+          onClick={() => setAskOpen(true)}
+        >
+          <MessageCircle size={24} strokeWidth={2} aria-hidden="true" />
+        </button>
+      )}
+
       <section className="hero">
         <h1 className="brand">Dropbrain</h1>
         <p className="tagline">Drop anything in, quiz it into memory.</p>
@@ -155,6 +200,7 @@ export default function HomePage() {
               aria-selected={tab === "text"}
               onClick={() => setTab("text")}
             >
+              <FileText size={16} strokeWidth={2} aria-hidden="true" />
               Paste text
             </button>
             <button
@@ -164,6 +210,7 @@ export default function HomePage() {
               aria-selected={tab === "url"}
               onClick={() => setTab("url")}
             >
+              <Link2 size={16} strokeWidth={2} aria-hidden="true" />
               Web URL
             </button>
           </div>
@@ -217,7 +264,7 @@ export default function HomePage() {
             </div>
             <button
               type="button"
-              className="cta"
+              className="cta btn-with-icon"
               disabled={
                 busy ||
                 (tab === "text"
@@ -226,6 +273,7 @@ export default function HomePage() {
               }
               onClick={() => void onGenerate()}
             >
+              <Sparkles size={16} strokeWidth={2} aria-hidden="true" />
               Generate quiz
             </button>
           </div>
@@ -238,9 +286,10 @@ export default function HomePage() {
           <h2>Recent quizzes</h2>
           <button
             type="button"
-            className="ghost history-refresh"
+            className="ghost history-refresh btn-with-icon"
             onClick={() => void refreshHistory()}
           >
+            <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
             Refresh
           </button>
         </div>
@@ -257,19 +306,48 @@ export default function HomePage() {
                     {historyStatusLabel(item)} · {formatHistoryWhen(item.updatedAt)}
                   </span>
                 </Link>
-                <button
-                  type="button"
-                  className="ghost history-delete"
-                  aria-label={`Delete ${item.title}`}
-                  onClick={() => void onDelete(item.id)}
-                >
-                  Delete
-                </button>
+                <div className="history-actions">
+                  <button
+                    type="button"
+                    className="ghost history-action btn-with-icon"
+                    aria-label={`Export ${item.title}`}
+                    onClick={() => void onExport(item.id)}
+                  >
+                    <Download size={15} strokeWidth={2} aria-hidden="true" />
+                    Export
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost history-action btn-with-icon"
+                    aria-label={`Delete ${item.title}`}
+                    onClick={() => void onDelete(item.id)}
+                  >
+                    <Trash2 size={15} strokeWidth={2} aria-hidden="true" />
+                    Delete
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      <ChatSidebar
+        open={askOpen}
+        onClose={() => setAskOpen(false)}
+        kicker="Open chat"
+        title="Ask anything"
+        emptyPrompt="Ask about any topic — explanations, quick drills, or study tips."
+        suggestions={askAnythingSuggestions(contentLang)}
+        placeholder="Ask anything…"
+        ariaLabel="Ask anything chat"
+        threadKey="ask-anything"
+        messages={askMessages}
+        onMessagesChange={setAskMessages}
+        stream={(next, onDelta, signal) =>
+          streamAskAnything(next, contentLang, onDelta, signal)
+        }
+      />
     </div>
   );
 }

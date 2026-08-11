@@ -531,6 +531,33 @@ export async function* streamChatAboutQuestion(
   );
 }
 
+function buildAskAnythingSystem(language: AppLanguage): string {
+  return `You are a friendly, practical study coach in Dropbrain.
+
+Rules:
+- Help the learner explore any topic: explain concepts, compare ideas, quiz them lightly, or suggest how to remember things.
+- Be concise (usually 2–5 short paragraphs or bullet points). Prefer Markdown (bold, lists, short headings, fenced code) when it helps clarity.
+- If you are unsure, say so briefly instead of inventing facts.
+- You may ask one short clarifying or follow-up question when it would help.
+- ${chatLanguageInstruction(language)}`;
+}
+
+export async function* streamAskAnything(
+  env: Env,
+  language: AppLanguage,
+  history: Array<{ role: "user" | "assistant"; content: string }>,
+): AsyncGenerator<string> {
+  const trimmed = prepareChatHistory(history);
+  yield* streamChat(
+    env,
+    [
+      { role: "system", content: buildAskAnythingSystem(language) },
+      ...trimmed,
+    ],
+    { temperature: 0.6 },
+  );
+}
+
 export async function generateMcq(
   env: Env,
   material: string,

@@ -5,6 +5,7 @@ import {
   generateMcq,
   normalizeLanguage,
   sseEncode,
+  streamAskAnything,
   streamChatAboutQuestion,
 } from "./llm";
 import {
@@ -261,6 +262,58 @@ function gradeAnswers(
 
   return { graded, correct, total, score, weakTags };
 }
+
+/** Open-ended study chat from the home page (SSE stream). */
+app.post("/api/chat", async (c) => {
+  const body = await c.req.json<{
+    language?: string;
+    messages?: Array<{ role?: string; content?: string }>;
+  }>();
+
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    return c.json({ error: "messages required" }, 400);
+  }
+
+  const history: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (const m of body.messages.slice(-12)) {
+    if (
+      (m.role === "user" || m.role === "assistant") &&
+      typeof m.content === "string" &&
+      m.content.trim()
+    ) {
+      history.push({ role: m.role, content: m.content.trim() });
+    }
+  }
+  if (history.length === 0 || history[history.length - 1]?.role !== "user") {
+    return c.json({ error: "messages must end with a user turn" }, 400);
+  }
+
+  const language = normalizeLanguage(body.language);
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        for await (const delta of streamAskAnything(c.env, language, history)) {
+          controller.enqueue(encoder.encode(sseEncode({ delta })));
+        }
+        controller.enqueue(encoder.encode(sseEncode({ done: true })));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Chat failed";
+        controller.enqueue(encoder.encode(sseEncode({ error: message })));
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+});
 
 /** Deeper Q&A about one question after answering (SSE stream). */
 app.post("/api/quizzes/:id/chat", async (c) => {

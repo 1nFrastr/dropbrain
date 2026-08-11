@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { chatSuggestions, detectOsLanguage } from "./i18n";
+import {
+  askAnythingSuggestions,
+  chatSuggestions,
+  detectOsLanguage,
+} from "./i18n";
 import { consumeSseFrames } from "./sse";
 
 describe("detectOsLanguage", () => {
@@ -27,6 +31,13 @@ describe("chatSuggestions", () => {
 
   it("returns English suggestions for en", () => {
     expect(chatSuggestions("en")[0]).toMatch(/Why/i);
+  });
+});
+
+describe("askAnythingSuggestions", () => {
+  it("returns localized open prompts", () => {
+    expect(askAnythingSuggestions("zh").length).toBeGreaterThan(0);
+    expect(askAnythingSuggestions("en")[0]).toMatch(/Explain|Quiz|remember/i);
   });
 });
 

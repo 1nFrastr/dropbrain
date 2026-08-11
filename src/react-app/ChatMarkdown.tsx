@@ -4,14 +4,16 @@ import rehypeHighlight from "rehype-highlight";
 
 type Props = {
   children: string;
+  /** Skip syntax highlighting while tokens are still arriving. */
+  streaming?: boolean;
 };
 
-export default function ChatMarkdown({ children }: Props) {
+export default function ChatMarkdown({ children, streaming = false }: Props) {
   return (
-    <div className="chat-md">
+    <div className={`chat-md${streaming ? " streaming" : ""}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        rehypePlugins={streaming ? [] : [rehypeHighlight]}
       >
         {children}
       </ReactMarkdown>

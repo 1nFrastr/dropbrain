@@ -128,27 +128,10 @@ export function submitQuiz(
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
-export async function streamChatAboutQuestion(
-  quizId: string,
-  questionId: string,
-  messages: ChatTurn[],
-  language: AppLanguage,
-  choice: number | undefined,
+async function consumeChatSse(
+  res: Response,
   onDelta: (delta: string) => void,
-  signal?: AbortSignal,
 ): Promise<string> {
-  const sessionId = getOrCreateSessionId();
-  const res = await fetch(`/api/quizzes/${quizId}/chat`, {
-    method: "POST",
-    credentials: "same-origin",
-    signal,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Session-Id": sessionId,
-    },
-    body: JSON.stringify({ questionId, messages, choice, language }),
-  });
-
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {
@@ -188,4 +171,46 @@ export async function streamChatAboutQuestion(
   }
 
   return full;
+}
+
+function chatHeaders(): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    "X-Session-Id": getOrCreateSessionId(),
+  };
+}
+
+export async function streamChatAboutQuestion(
+  quizId: string,
+  questionId: string,
+  messages: ChatTurn[],
+  language: AppLanguage,
+  choice: number | undefined,
+  onDelta: (delta: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const res = await fetch(`/api/quizzes/${quizId}/chat`, {
+    method: "POST",
+    credentials: "same-origin",
+    signal,
+    headers: chatHeaders(),
+    body: JSON.stringify({ questionId, messages, choice, language }),
+  });
+  return consumeChatSse(res, onDelta);
+}
+
+export async function streamAskAnything(
+  messages: ChatTurn[],
+  language: AppLanguage,
+  onDelta: (delta: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    credentials: "same-origin",
+    signal,
+    headers: chatHeaders(),
+    body: JSON.stringify({ messages, language }),
+  });
+  return consumeChatSse(res, onDelta);
 }

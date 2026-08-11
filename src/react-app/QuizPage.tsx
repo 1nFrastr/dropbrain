@@ -1,4 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChartColumn,
+  ChevronLeft,
+  ChevronRight,
+  House,
+  MessageCircle,
+} from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   checkAnswer as checkAnswerApi,
@@ -194,7 +201,8 @@ export default function QuizPage() {
           <h1 className="brand">Dropbrain</h1>
           <p className="error">{error ?? "Quiz not found"}</p>
           <div className="nav-row">
-            <Link className="ghost" to="/">
+            <Link className="ghost btn-with-icon" to="/">
+              <House size={16} strokeWidth={2} aria-hidden="true" />
               Back home
             </Link>
           </div>
@@ -224,7 +232,8 @@ export default function QuizPage() {
       <section>
         <div className="quiz-meta">
           <div className="quiz-meta-main">
-            <Link className="quiz-home-link" to="/">
+            <Link className="quiz-home-link btn-with-icon" to="/">
+              <House size={15} strokeWidth={2} aria-hidden="true" />
               Home
             </Link>
             <span>{quiz.title}</span>
@@ -265,9 +274,10 @@ export default function QuizPage() {
             <p>{localReveal.explanation}</p>
             <button
               type="button"
-              className="ghost ask-btn"
+              className="ghost ask-btn btn-with-icon"
               onClick={() => setChatOpen(true)}
             >
+              <MessageCircle size={16} strokeWidth={2} aria-hidden="true" />
               Ask about this
             </button>
           </div>
@@ -278,43 +288,47 @@ export default function QuizPage() {
         <div className="nav-row quiz-nav">
           <button
             type="button"
-            className="ghost"
+            className="ghost btn-with-icon"
             disabled={index <= 0 || busy}
             onClick={() => goTo(index - 1)}
           >
+            <ChevronLeft size={16} strokeWidth={2} aria-hidden="true" />
             Previous
           </button>
           <div className="quiz-nav-right">
             {session.status === "completed" && session.submitResult && (
               <button
                 type="button"
-                className="ghost"
+                className="ghost btn-with-icon"
                 disabled={busy}
                 onClick={() => setView("results")}
               >
+                <ChartColumn size={16} strokeWidth={2} aria-hidden="true" />
                 Results
               </button>
             )}
             {index < quiz.questions.length - 1 && (
               <button
                 type="button"
-                className="cta"
+                className="cta btn-with-icon"
                 disabled={busy}
                 onClick={() => goTo(index + 1)}
               >
                 Next
+                <ChevronRight size={16} strokeWidth={2} aria-hidden="true" />
               </button>
             )}
             {session.status !== "completed" &&
               (allAnswered || index >= quiz.questions.length - 1) && (
                 <button
                   type="button"
-                  className={
+                  className={`btn-with-icon ${
                     index < quiz.questions.length - 1 ? "ghost" : "cta"
-                  }
+                  }`}
                   disabled={busy || !allAnswered}
                   onClick={() => void onSeeResults()}
                 >
+                  <ChartColumn size={16} strokeWidth={2} aria-hidden="true" />
                   See results
                 </button>
               )}

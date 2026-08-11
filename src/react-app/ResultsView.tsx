@@ -1,3 +1,4 @@
+import { BookOpenCheck, Plus } from "lucide-react";
 import type { GradedResult, SubmitResponse } from "./api";
 
 type Props = {
@@ -74,11 +75,13 @@ export default function ResultsView({
 
       <div className="nav-row">
         {onReview && (
-          <button type="button" className="ghost" onClick={onReview}>
+          <button type="button" className="ghost btn-with-icon" onClick={onReview}>
+            <BookOpenCheck size={16} strokeWidth={2} aria-hidden="true" />
             Review questions
           </button>
         )}
-        <button type="button" className="ghost" onClick={onAgain}>
+        <button type="button" className="ghost btn-with-icon" onClick={onAgain}>
+          <Plus size={16} strokeWidth={2} aria-hidden="true" />
           Drop something else
         </button>
       </div>

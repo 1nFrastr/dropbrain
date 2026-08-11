@@ -56,3 +56,19 @@ export function chatSuggestions(lang: AppLanguage): string[] {
     "What misconception does the wrong option trap?",
   ];
 }
+
+/** Open-ended home chat prompts. */
+export function askAnythingSuggestions(lang: AppLanguage): string[] {
+  if (lang === "zh") {
+    return [
+      "用简单的话解释一个概念",
+      "帮我做一个 3 题小测",
+      "怎样更高效地记忆？",
+    ];
+  }
+  return [
+    "Explain a concept in simple terms",
+    "Quiz me with 3 quick questions",
+    "How can I remember this better?",
+  ];
+}
