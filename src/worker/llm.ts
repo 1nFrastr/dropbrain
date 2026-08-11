@@ -1,4 +1,10 @@
 import type { GeneratedQuestion } from "./types";
+import {
+  clampText,
+  MAX_BODY_CHARS,
+  MAX_CHAT_MATERIAL_CHARS,
+  MAX_CHAT_MESSAGE_CHARS,
+} from "../shared/limits";
 
 export type AppLanguage = "en" | "zh";
 
@@ -413,7 +419,8 @@ async function generateOnce(
   count: number,
   lang: AppLanguage,
 ): Promise<GeneratedQuestion[]> {
-  const prompt = buildPrompt(material, count, lang);
+  const { text: limitedMaterial } = clampText(material, MAX_BODY_CHARS);
+  const prompt = buildPrompt(limitedMaterial, count, lang);
   const text = await completeChat(
     env,
     [
@@ -453,10 +460,10 @@ function buildQuestionChatSystem(ctx: QuestionChatContext): string {
       ? `Learner's answer: ${LETTERS[ctx.userChoice] ?? ctx.userChoice}. ${ctx.options[ctx.userChoice] ?? ""}`
       : "Learner's answer: unknown";
 
-  const material =
-    ctx.material.length > 12_000
-      ? `${ctx.material.slice(0, 12_000)}\n…[truncated]`
-      : ctx.material;
+  const { text: material } = clampText(
+    ctx.material,
+    MAX_CHAT_MATERIAL_CHARS,
+  );
 
   return `You are a patient study coach helping a learner dig deeper into one quiz question.
 
@@ -493,7 +500,7 @@ function prepareChatHistory(
     .slice(-12)
     .map((m) => ({
       role: m.role,
-      content: m.content.trim().slice(0, 4000),
+      content: m.content.trim().slice(0, MAX_CHAT_MESSAGE_CHARS),
     }));
 
   if (trimmed.length === 0) {

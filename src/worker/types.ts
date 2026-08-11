@@ -40,9 +40,14 @@ export interface PublicQuestion {
   tags: string[];
 }
 
-export const MAX_BODY_CHARS = 60_000;
 export const DEFAULT_QUIZ_COUNT = 8;
 export const MIN_QUIZ_COUNT = 5;
 export const MAX_QUIZ_COUNT = 10;
 /** How long URL page fetches stay reusable in D1 before re-scraping. */
 export const SOURCE_URL_CACHE_TTL_DAYS = 10;
+
+export {
+  MAX_BODY_CHARS,
+  MAX_CHAT_MATERIAL_CHARS,
+  MAX_CHAT_MESSAGE_CHARS,
+} from "../shared/limits";

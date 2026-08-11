@@ -1,4 +1,8 @@
-import { MAX_BODY_CHARS, SOURCE_URL_CACHE_TTL_DAYS } from "./types";
+import {
+  clampSourceBody,
+  isTruncatedSourceBody,
+} from "../shared/limits";
+import { SOURCE_URL_CACHE_TTL_DAYS } from "./types";
 
 export interface FetchedSource {
   title: string;
@@ -74,19 +78,7 @@ export function normalizePageUrl(raw: string): string {
 }
 
 export function isTruncatedBody(markdown: string): boolean {
-  return markdown.includes("[Content truncated for quiz generation.]");
-}
-
-function truncateBody(markdown: string): { body: string; truncated: boolean } {
-  if (markdown.length <= MAX_BODY_CHARS) {
-    return { body: markdown, truncated: false };
-  }
-  return {
-    body:
-      markdown.slice(0, MAX_BODY_CHARS) +
-      "\n\n…\n[Content truncated for quiz generation.]",
-    truncated: true,
-  };
+  return isTruncatedSourceBody(markdown);
 }
 
 function titleFromMarkdown(markdown: string, fallback: string): string {
@@ -106,7 +98,7 @@ export function normalizeTextSource(content: string): FetchedSource {
   if (!cleaned) {
     throw new Error("Text content is empty.");
   }
-  const { body, truncated } = truncateBody(cleaned);
+  const { text: body, truncated } = clampSourceBody(cleaned);
   return {
     title: titleFromMarkdown(body, "Pasted text"),
     markdown: body,
@@ -170,7 +162,7 @@ export async function fetchSource(
         "Could not extract readable content from this page (empty result).",
       );
     }
-    const { body, truncated } = truncateBody(markdown);
+    const { text: body, truncated } = clampSourceBody(markdown);
     return {
       title: titleFromMarkdown(body, new URL(normalized).hostname),
       markdown: body,
