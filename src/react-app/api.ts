@@ -11,7 +11,18 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const res = await fetch(path, { ...init, headers, credentials: "same-origin" });
-  const data = (await res.json()) as T & { error?: string };
+  const raw = await res.text();
+  let data: T & { error?: string };
+  try {
+    data = JSON.parse(raw) as T & { error?: string };
+  } catch {
+    const snippet = raw.slice(0, 120).replace(/\s+/g, " ").trim();
+    throw new Error(
+      res.ok
+        ? `Server returned non-JSON for ${path}${snippet ? `: ${snippet}` : ""}`
+        : `Request failed (${res.status}) with non-JSON body${snippet ? `: ${snippet}` : ""}`,
+    );
+  }
   if (!res.ok) {
     throw new Error(data.error || `Request failed (${res.status})`);
   }

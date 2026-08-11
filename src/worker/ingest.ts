@@ -10,6 +10,67 @@ export interface FetchedSource {
   truncated: boolean;
 }
 
+/** Thrown when fetched/pasted material is empty, thin, or looks like an error page. */
+export class UnusableSourceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnusableSourceError";
+  }
+}
+
+/** Minimum plain-text characters required before quiz generation is worth attempting. */
+export const MIN_USABLE_PLAIN_CHARS = 180;
+
+const ERROR_PAGE_SIGNAL_RE =
+  /\b(404|page not found|not found|access denied|forbidden|unauthorized|just a moment|attention required|enable javascript|please enable cookies|captcha|bot detection|sign in to continue|log in to continue|login required)\b/i;
+
+/** Rough plain-text length after stripping common Markdown chrome. */
+export function plainTextLength(markdown: string): number {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`]+`/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
+    .replace(/\[[^\]]*\]\([^)]+\)/g, " ")
+    .replace(/[#>*_\-|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim().length;
+}
+
+/**
+ * Cheap post-fetch gate: reject empty/thin bodies and obvious error/login pages
+ * before spending an LLM call.
+ */
+export function assertUsableSourceBody(markdown: string): void {
+  const trimmed = markdown.trim();
+  if (!trimmed) {
+    throw new UnusableSourceError(
+      "Could not extract readable content from this page (empty result).",
+    );
+  }
+
+  const plainLen = plainTextLength(trimmed);
+  if (plainLen < MIN_USABLE_PLAIN_CHARS) {
+    throw new UnusableSourceError(
+      "Page content is too short or thin to generate a quiz. Try another URL or paste the article text.",
+    );
+  }
+
+  // Error/login walls are usually short; long articles that merely mention "404" pass.
+  if (plainLen < 800 && ERROR_PAGE_SIGNAL_RE.test(trimmed)) {
+    const head = trimmed.slice(0, 500);
+    const looksLikeErrorPage =
+      /^(#\s*)?(404|not found|page not found|access denied|forbidden|unauthorized)\b/im.test(
+        head,
+      ) ||
+      (ERROR_PAGE_SIGNAL_RE.test(head) && plainLen < 400);
+    if (looksLikeErrorPage) {
+      throw new UnusableSourceError(
+        "This page looks like an error, login, or blocked page rather than readable article content.",
+      );
+    }
+  }
+}
+
 export type CachedSourceRow = {
   id: string;
   title: string;
@@ -93,6 +154,53 @@ function titleFromMarkdown(markdown: string, fallback: string): string {
   return (firstLine ?? fallback).replace(/^#+\s*/, "").slice(0, 200);
 }
 
+/** Strip YAML frontmatter and common page-chrome that pollutes quiz prompts. */
+export function cleanBrowserMarkdown(markdown: string): string {
+  let text = markdown.replace(/^\uFEFF/, "").trim();
+
+  if (text.startsWith("---")) {
+    const end = text.indexOf("\n---", 3);
+    if (end !== -1) {
+      text = text.slice(end + 4).trim();
+    }
+  }
+
+  const lines = text.split("\n");
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!.trim();
+    if (!line) {
+      i += 1;
+      continue;
+    }
+    const isSkip =
+      /^\[Skip to (main )?content\]/i.test(line) ||
+      /^\[!\[[^\]]*\]\([^)]+\)\]\([^)]+\)$/.test(line) ||
+      /^!\[[^\]]*\]\([^)]+\)$/.test(line);
+    if (isSkip) {
+      i += 1;
+      continue;
+    }
+    break;
+  }
+
+  text = lines.slice(i).join("\n").trim();
+
+  // Prefer content from the first real H1 when chrome still precedes it.
+  const h1 = text.match(/^#\s+.+$/m);
+  if (h1?.index != null && h1.index > 0) {
+    const before = text.slice(0, h1.index);
+    const linkHeavy =
+      (before.match(/\[[^\]]+\]\([^)]+\)/g)?.length ?? 0) >= 3 &&
+      before.length < 4_000;
+    if (linkHeavy) {
+      text = text.slice(h1.index).trim();
+    }
+  }
+
+  return text;
+}
+
 export function normalizeTextSource(content: string): FetchedSource {
   const cleaned = content.trim();
   if (!cleaned) {
@@ -156,12 +264,10 @@ export async function fetchSource(
       url: normalized,
       gotoOptions: { waitUntil: "networkidle2" },
     });
-    const markdown = (await extractMarkdownResult(result)).trim();
-    if (!markdown) {
-      throw new Error(
-        "Could not extract readable content from this page (empty result).",
-      );
-    }
+    const markdown = cleanBrowserMarkdown(
+      await extractMarkdownResult(result),
+    );
+    assertUsableSourceBody(markdown);
     const { text: body, truncated } = clampSourceBody(markdown);
     return {
       title: titleFromMarkdown(body, new URL(normalized).hostname),
@@ -169,6 +275,7 @@ export async function fetchSource(
       truncated,
     };
   } catch (err) {
+    if (err instanceof UnusableSourceError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     if (
       /timeout|blocked|403|401|captcha|anti.?bot|navigation/i.test(message)

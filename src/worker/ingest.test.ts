@@ -1,11 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
+  assertUsableSourceBody,
+  cleanBrowserMarkdown,
   clearInflightFetchesForTests,
   isTruncatedBody,
   isUrlSourceCacheFresh,
+  MIN_USABLE_PLAIN_CHARS,
   normalizePageUrl,
   normalizeTextSource,
+  plainTextLength,
   resolveUrlSource,
+  UnusableSourceError,
   type CachedSourceRow,
   type FetchedSource,
   type UrlSourceStore,
@@ -35,6 +40,30 @@ describe("normalizePageUrl", () => {
   });
 });
 
+describe("cleanBrowserMarkdown", () => {
+  it("strips YAML frontmatter and skip/logo chrome before content", () => {
+    const cleaned = cleanBrowserMarkdown(`---
+title: "Demo | Learn Temporal"
+meta:
+  description: "x"
+---
+
+[Skip to main content](#__docusaurus_skipToContent_fallback)
+
+[![Temporal logo](https://learn.temporal.io/img/logo.svg)](https://temporal.io/)
+
+[Docs](/docs) [Tutorials](/tutorials) [Blog](/blog)
+
+# Build a recurring billing system
+
+Workflows are durable.`);
+    expect(cleaned.startsWith("# Build a recurring billing system")).toBe(true);
+    expect(cleaned).toContain("Workflows are durable.");
+    expect(cleaned).not.toContain("Skip to main content");
+    expect(cleaned).not.toContain("title:");
+  });
+});
+
 describe("normalizeTextSource", () => {
   it("uses markdown heading as title", () => {
     const src = normalizeTextSource("# Hello\n\nBody text here that is long enough.");
@@ -52,6 +81,46 @@ describe("normalizeTextSource", () => {
     expect(src.truncated).toBe(true);
     expect(isTruncatedBody(src.markdown)).toBe(true);
     expect(src.markdown.length).toBeLessThan(huge.length);
+  });
+});
+
+describe("assertUsableSourceBody", () => {
+  it("accepts a normal article-length body", () => {
+    const body =
+      "# Controllers\n\n" +
+      "Kubernetes controllers reconcile desired state with actual state. ".repeat(6);
+    expect(() => assertUsableSourceBody(body)).not.toThrow();
+    expect(plainTextLength(body)).toBeGreaterThanOrEqual(MIN_USABLE_PLAIN_CHARS);
+  });
+
+  it("rejects thin or empty bodies", () => {
+    expect(() => assertUsableSourceBody("")).toThrow(UnusableSourceError);
+    expect(() => assertUsableSourceBody("# 404\n\nNot found.")).toThrow(
+      /too short|thin|error|login|blocked/i,
+    );
+  });
+
+  it("rejects short error / login pages", () => {
+    const page = [
+      "# Page Not Found",
+      "",
+      "The page you requested was not found.",
+      "Please sign in to continue or go back home.",
+      "Navigation Home Docs Blog Login",
+    ].join("\n");
+    // Pad a bit so we fail on error-page heuristic, not only min length.
+    const padded = page + "\n\n" + "Please try again later. ".repeat(8);
+    expect(() => assertUsableSourceBody(padded)).toThrow(UnusableSourceError);
+    expect(() => assertUsableSourceBody(padded)).toThrow(
+      /error|login|blocked/i,
+    );
+  });
+
+  it("does not reject long technical articles that mention 404", () => {
+    const body =
+      "# Handling HTTP 404 in APIs\n\n" +
+      "Return a structured 404 when a resource is not found. ".repeat(20);
+    expect(() => assertUsableSourceBody(body)).not.toThrow();
   });
 });
 

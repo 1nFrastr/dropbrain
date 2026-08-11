@@ -3,6 +3,7 @@ import {
   extractWorkersAiSseDeltas,
   normalizeLanguage,
   sseEncode,
+  UnusableMaterialError,
   validateQuestions,
 } from "./llm";
 
@@ -57,9 +58,32 @@ describe("validateQuestions", () => {
   };
 
   it("accepts a valid payload", () => {
-    const out = validateQuestions({ questions: [good, good, good] }, 3);
+    const out = validateQuestions(
+      { ok: true, questions: [good, good, good] },
+      3,
+    );
     expect(out).toHaveLength(3);
     expect(out[0]?.correctIndex).toBe(1);
+  });
+
+  it("accepts legacy payloads without ok", () => {
+    const out = validateQuestions({ questions: [good, good, good] }, 3);
+    expect(out).toHaveLength(3);
+  });
+
+  it("rejects unusable material from the same LLM round", () => {
+    expect(() =>
+      validateQuestions(
+        { ok: false, reason: "Looks like a 404 page with no article body." },
+        5,
+      ),
+    ).toThrow(UnusableMaterialError);
+    expect(() =>
+      validateQuestions(
+        { ok: false, reason: "Looks like a 404 page with no article body." },
+        5,
+      ),
+    ).toThrow(/404/i);
   });
 
   it("rejects wrong option counts", () => {

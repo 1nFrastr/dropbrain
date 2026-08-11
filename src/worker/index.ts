@@ -1,8 +1,15 @@
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import { fetchSourceDeduped, normalizeTextSource, d1UrlSourceStore, resolveUrlSource } from "./ingest";
+import {
+  fetchSourceDeduped,
+  normalizeTextSource,
+  d1UrlSourceStore,
+  resolveUrlSource,
+  UnusableSourceError,
+} from "./ingest";
 import {
   generateMcq,
+  UnusableMaterialError,
   normalizeLanguage,
   sseEncode,
   streamAskAnything,
@@ -151,7 +158,11 @@ app.post("/api/quizzes", async (c) => {
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Quiz generation failed";
-    return c.json({ error: message }, 500);
+    const status =
+      err instanceof UnusableMaterialError || err instanceof UnusableSourceError
+        ? 400
+        : 500;
+    return c.json({ error: message }, status);
   }
 });
 

@@ -5,8 +5,17 @@ import {
   MAX_CHAT_MATERIAL_CHARS,
   MAX_CHAT_MESSAGE_CHARS,
 } from "../shared/limits";
+import { assertUsableSourceBody, UnusableSourceError } from "./ingest";
 
 export type AppLanguage = "en" | "zh";
+
+/** Thrown when the quiz model rejects the material as unusable (same LLM round). */
+export class UnusableMaterialError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnusableMaterialError";
+  }
+}
 
 export function normalizeLanguage(value: unknown): AppLanguage {
   if (value === "zh" || value === "zh-CN" || value === "zh-Hans") return "zh";
@@ -30,7 +39,23 @@ function buildPrompt(
   count: number,
   lang: AppLanguage,
 ): string {
-  return `You are a quiz writer for active recall. Create exactly ${count} multiple-choice questions from ONLY the material below.
+  return `You are a quiz writer for active recall.
+
+Step 1 — Material check (do this first, still in this same response):
+Decide whether MATERIAL is usable study content for quiz generation.
+Mark it UNUSABLE if it is primarily any of:
+- an error / 404 / empty / "page not found" page
+- a login wall, paywall teaser, captcha, or bot-check page
+- mostly navigation chrome, menus, cookie banners, or boilerplate with little article body
+- too thin or fragmented to support meaningful active-recall questions
+
+If UNUSABLE, return ONLY:
+{
+  "ok": false,
+  "reason": "short explanation of what is wrong with the material"
+}
+
+Step 2 — Only if usable: create exactly ${count} multiple-choice questions from ONLY the material below.
 
 Rules:
 - Base every question and explanation strictly on the material. Do not invent facts.
@@ -41,8 +66,9 @@ Rules:
 - correctIndex is 0-based (0..3).
 - ${languageInstruction(lang)}
 
-Return ONLY valid JSON with this shape:
+If usable, return ONLY valid JSON with this shape:
 {
+  "ok": true,
   "questions": [
     {
       "stem": "string",
@@ -75,7 +101,22 @@ export function validateQuestions(
   if (!payload || typeof payload !== "object") {
     throw new Error("LLM response is not an object.");
   }
-  const questions = (payload as { questions?: unknown }).questions;
+  const obj = payload as {
+    ok?: unknown;
+    reason?: unknown;
+    questions?: unknown;
+  };
+
+  // Same LLM round may refuse unusable material instead of inventing a quiz.
+  if (obj.ok === false) {
+    const reason =
+      typeof obj.reason === "string" && obj.reason.trim()
+        ? obj.reason.trim()
+        : "Material is not usable for quiz generation.";
+    throw new UnusableMaterialError(reason);
+  }
+
+  const questions = obj.questions;
   if (!Array.isArray(questions) || questions.length === 0) {
     throw new Error("LLM response missing questions array.");
   }
@@ -427,7 +468,7 @@ async function generateOnce(
       {
         role: "system",
         content:
-          "You generate rigorous active-recall quizzes. Reply with JSON only.",
+          "You generate rigorous active-recall quizzes. First assess whether the material is usable study content; if not, return {\"ok\":false,\"reason\":\"...\"}. Otherwise return {\"ok\":true,\"questions\":[...]}. Reply with JSON only.",
       },
       { role: "user", content: prompt },
     ],
@@ -565,19 +606,30 @@ export async function* streamAskAnything(
   );
 }
 
+function isNonRetryableMcqError(err: unknown): boolean {
+  return (
+    err instanceof UnusableMaterialError || err instanceof UnusableSourceError
+  );
+}
+
 export async function generateMcq(
   env: Env,
   material: string,
   count: number,
   lang: AppLanguage = "en",
 ): Promise<GeneratedQuestion[]> {
+  // Defense in depth for cached / pasted sources that skipped the fetch gate.
+  assertUsableSourceBody(material);
+
   try {
     return await generateOnce(env, material, count, lang);
   } catch (firstErr) {
+    if (isNonRetryableMcqError(firstErr)) throw firstErr;
     // One retry on schema / parse failure
     try {
       return await generateOnce(env, material, count, lang);
     } catch (secondErr) {
+      if (isNonRetryableMcqError(secondErr)) throw secondErr;
       const a = firstErr instanceof Error ? firstErr.message : String(firstErr);
       const b =
         secondErr instanceof Error ? secondErr.message : String(secondErr);
