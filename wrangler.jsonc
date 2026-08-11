@@ -16,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "dropbrain",
-      "database_id": "00000000-0000-0000-0000-000000000001",
+      "database_id": "5b6d2569-b9fa-4002-b4e3-098a86d02ca4",
       "migrations_dir": "migrations"
     }
   ],
