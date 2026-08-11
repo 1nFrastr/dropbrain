@@ -184,6 +184,24 @@
   margin-bottom: 1.25rem;
 }
 
+.quiz-meta-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.65rem 0.9rem;
+  min-width: 0;
+}
+
+.quiz-home-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.quiz-home-link:hover {
+  text-decoration: underline;
+}
+
 .stem {
   font-family: var(--font-display);
   font-size: clamp(1.35rem, 3.5vw, 1.8rem);
@@ -259,8 +277,103 @@
 .nav-row {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 1.5rem;
+}
+
+.quiz-nav {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.quiz-nav-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+a.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.history {
+  margin-top: 2.75rem;
+  animation: rise 0.7s ease 0.2s both;
+}
+
+.history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.history-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+}
+
+.history-refresh {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.65rem;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 0.35rem;
+}
+
+.history-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  border-radius: 10px;
+}
+
+.history-link:hover {
+  background: var(--accent-soft);
+}
+
+.history-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-meta {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.history-delete {
+  padding: 0.55rem 0.75rem;
+  font-size: 0.85rem;
 }
 
 .app.chat-open {
@@ -682,8 +795,25 @@
     align-items: stretch;
   }
 
-  .cta,
-  .ghost {
+  .controls .cta,
+  .quiz-nav .cta,
+  .quiz-nav .ghost,
+  .nav-row .cta,
+  .nav-row .ghost {
+    width: 100%;
+  }
+
+  .quiz-nav,
+  .quiz-nav-right {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .history-item {
+    grid-template-columns: 1fr;
+  }
+
+  .history-delete {
     width: 100%;
   }
 

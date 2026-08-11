@@ -20,6 +20,7 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.2",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1"
   },
@@ -30,6 +31,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "fake-indexeddb": "^6.2.5",
     "typescript": "^5.9.3",
     "vite": "^7.0.0",
     "vitest": "^4.1.10",
