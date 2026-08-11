@@ -287,6 +287,95 @@ async function* streamOpenAiCompatible(
   }
 }
 
+/**
+ * Normalize Workers AI sync outputs.
+ * Newer Llama responses use OpenAI chat.completion shape; when the model
+ * emits JSON, `response` may already be a parsed object while
+ * `choices[0].message.content` remains the string form.
+ */
+export function extractWorkersAiText(result: unknown): string {
+  if (typeof result === "string") {
+    if (!result) throw new Error("Empty completion from Workers AI.");
+    return result;
+  }
+
+  // AI binding may return a fetch Response in some runtimes.
+  if (isResponseLike(result)) {
+    throw new Error(
+      "Unexpected Workers AI response. got Response (use stream or await body)",
+    );
+  }
+
+  if (!result || typeof result !== "object") {
+    throw new Error(
+      `Unexpected Workers AI response. type=${typeof result}`,
+    );
+  }
+
+  // REST-style wrapper: { success, result: {...} }
+  let row = result as Record<string, unknown>;
+  if (
+    row.result &&
+    typeof row.result === "object" &&
+    ("response" in (row.result as object) ||
+      "choices" in (row.result as object))
+  ) {
+    row = row.result as Record<string, unknown>;
+  }
+
+  const choices = row.choices;
+  if (Array.isArray(choices) && choices.length > 0) {
+    const first = choices[0];
+    if (first && typeof first === "object") {
+      const message = (first as { message?: { content?: unknown } }).message;
+      const content = message?.content;
+      if (typeof content === "string" && content) return content;
+      // Some gateways put structured JSON directly in content
+      if (content && typeof content === "object") {
+        return JSON.stringify(content);
+      }
+    }
+  }
+
+  if ("response" in row) {
+    const response = row.response;
+    if (typeof response === "string") {
+      if (!response) throw new Error("Empty completion from Workers AI.");
+      return response;
+    }
+    // Auto-parsed JSON / structured output
+    if (response && typeof response === "object") {
+      return JSON.stringify(response);
+    }
+  }
+
+  if (typeof row.text === "string" && row.text) {
+    return row.text;
+  }
+
+  // ReadableStream / async iterable mistakenly returned for non-stream calls
+  if (isReadableStream(result) || Symbol.asyncIterator in Object(result)) {
+    throw new Error(
+      "Unexpected Workers AI response. got stream for non-stream call",
+    );
+  }
+
+  const keys = Object.keys(row).slice(0, 12).join(",");
+  throw new Error(
+    `Unexpected Workers AI response. type=object keys=${keys || "(none)"}`,
+  );
+}
+
+function isResponseLike(value: unknown): value is Response {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Response).arrayBuffer === "function" &&
+    typeof (value as Response).text === "function" &&
+    typeof (value as Response).status === "number"
+  );
+}
+
 async function callWorkersAi(
   env: Env,
   messages: ChatMessage[],
@@ -295,13 +384,7 @@ async function callWorkersAi(
     messages,
     max_tokens: 4096,
   });
-
-  if (typeof result === "string") return result;
-  if (result && typeof result === "object" && "response" in result) {
-    const response = (result as { response?: unknown }).response;
-    if (typeof response === "string") return response;
-  }
-  throw new Error("Unexpected Workers AI response.");
+  return extractWorkersAiText(result);
 }
 
 /** Parse Workers AI SSE chunks: `data: {"response":"..."}\n\n` / `data: [DONE]`. */

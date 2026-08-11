@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractWorkersAiSseDeltas,
+  extractWorkersAiText,
   normalizeLanguage,
   sseEncode,
   UnusableMaterialError,
@@ -45,6 +46,37 @@ describe("extractWorkersAiSseDeltas", () => {
 
     const second = collectDeltas('ponse":"好"}\n\ndata: [DONE]\n\n', first.carry);
     expect(second.deltas).toEqual(["好"]);
+  });
+});
+
+describe("extractWorkersAiText", () => {
+  it("accepts legacy string / response string shapes", () => {
+    expect(extractWorkersAiText("hello")).toBe("hello");
+    expect(extractWorkersAiText({ response: "hello" })).toBe("hello");
+  });
+
+  it("reads OpenAI-compatible choices[].message.content", () => {
+    expect(
+      extractWorkersAiText({
+        choices: [{ message: { content: '{"ok":true}' } }],
+        response: { ok: true },
+      }),
+    ).toBe('{"ok":true}');
+  });
+
+  it("stringifies auto-parsed JSON response objects", () => {
+    expect(extractWorkersAiText({ response: { ok: true, n: 1 } })).toBe(
+      '{"ok":true,"n":1}',
+    );
+  });
+
+  it("unwraps REST { result } envelopes", () => {
+    expect(
+      extractWorkersAiText({
+        success: true,
+        result: { response: { ok: true } },
+      }),
+    ).toBe('{"ok":true}');
   });
 });
 
