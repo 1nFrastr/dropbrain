@@ -18,7 +18,6 @@ import {
   type ChatTurn,
 } from "./api";
 import ChatSidebar from "./ChatSidebar";
-import { MAX_BODY_CHARS } from "../shared/limits";
 import {
   askAnythingSuggestions,
   contentLanguageLabel,
@@ -218,22 +217,13 @@ export default function HomePage() {
           </div>
 
           {tab === "text" ? (
-            <div className="text-fields">
-              <textarea
-                className="field"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Paste an article, docs, or study notes…"
-                aria-label="Text to learn"
-                maxLength={MAX_BODY_CHARS}
-              />
-              <p
-                className={`char-meter${text.length >= MAX_BODY_CHARS ? " at-limit" : ""}`}
-              >
-                {text.length.toLocaleString()} / {MAX_BODY_CHARS.toLocaleString()}{" "}
-                characters
-              </p>
-            </div>
+            <textarea
+              className="field"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Paste an article, docs, or study notes…"
+              aria-label="Text to learn"
+            />
           ) : (
             <div className="url-fields">
               <input
@@ -252,10 +242,6 @@ export default function HomePage() {
                 />
                 <span>Use cached page when available (10 days)</span>
               </label>
-              <p className="char-meter">
-                Page text is capped at {MAX_BODY_CHARS.toLocaleString()} characters
-                for storage and quiz generation.
-              </p>
             </div>
           )}
 
