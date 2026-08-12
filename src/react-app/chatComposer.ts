@@ -23,7 +23,9 @@ export function isNearBottom(
 
 /** Pin scroll container to bottom without smooth animation. */
 export function pinToBottom(
-  el: Pick<HTMLElement, "scrollHeight" | "scrollTop">,
+  el: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">,
 ): void {
-  el.scrollTop = el.scrollHeight;
+  const maxScroll = el.scrollHeight - el.clientHeight;
+  if (el.scrollTop >= maxScroll - 1) return;
+  el.scrollTop = maxScroll;
 }

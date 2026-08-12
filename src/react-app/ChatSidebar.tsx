@@ -58,6 +58,9 @@ export default function ChatSidebar({
   const streamRafRef = useRef(0);
   const streamPendingRef = useRef("");
   const streamLastPaintRef = useRef(0);
+  const sendScrollRafRef = useRef(0);
+  const skipScrollPinRef = useRef(false);
+  const settledBubbleIndexRef = useRef<number | null>(null);
 
   function markProgrammaticScroll() {
     ignoringScrollRef.current = true;
@@ -79,6 +82,10 @@ export default function ChatSidebar({
     if (!open || !stickToBottomRef.current) return;
     const el = listRef.current;
     if (!el) return;
+    if (skipScrollPinRef.current) {
+      skipScrollPinRef.current = false;
+      return;
+    }
     markProgrammaticScroll();
     pinToBottom(el);
   }, [open, messages, sending, streamingText]);
@@ -96,6 +103,9 @@ export default function ChatSidebar({
     return () => {
       abortRef.current?.abort();
       if (streamRafRef.current) cancelAnimationFrame(streamRafRef.current);
+      if (sendScrollRafRef.current) {
+        cancelAnimationFrame(sendScrollRafRef.current);
+      }
       if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
     };
   }, []);
@@ -125,6 +135,17 @@ export default function ChatSidebar({
     streamLastPaintRef.current = 0;
     setError(null);
     stickToBottomRef.current = true;
+    skipScrollPinRef.current = false;
+    if (sendScrollRafRef.current) {
+      cancelAnimationFrame(sendScrollRafRef.current);
+    }
+    sendScrollRafRef.current = requestAnimationFrame(() => {
+      sendScrollRafRef.current = 0;
+      const el = listRef.current;
+      if (!el) return;
+      markProgrammaticScroll();
+      pinToBottom(el);
+    });
 
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -164,11 +185,16 @@ export default function ChatSidebar({
       if (!finalContent.trim()) {
         throw new Error("Empty reply from assistant");
       }
+      const finalMessages: ChatTurn[] = [
+        ...next,
+        { role: "assistant", content: finalContent },
+      ];
+      settledBubbleIndexRef.current = finalMessages.length - 1;
+      skipScrollPinRef.current = true;
       setStreamingText("");
       streamPendingRef.current = "";
       setSending(false);
-      stickToBottomRef.current = true;
-      onMessagesChange([...next, { role: "assistant", content: finalContent }]);
+      onMessagesChange(finalMessages);
     } catch (err) {
       if (streamRafRef.current) {
         cancelAnimationFrame(streamRafRef.current);
@@ -276,10 +302,11 @@ export default function ChatSidebar({
           {messages.map((m, i) => {
             if (!m.content.trim()) return null;
             const copied = copiedIndex === i;
+            const settled = settledBubbleIndexRef.current === i;
             return (
               <div
                 key={`${m.role}-${i}`}
-                className={`chat-bubble ${m.role}`}
+                className={`chat-bubble ${m.role}${settled ? " settled" : ""}`}
               >
                 {m.role === "assistant" ? (
                   <>

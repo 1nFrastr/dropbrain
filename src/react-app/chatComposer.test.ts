@@ -55,9 +55,15 @@ describe("isNearBottom", () => {
 });
 
 describe("pinToBottom", () => {
-  it("sets scrollTop to scrollHeight", () => {
-    const el = { scrollHeight: 500, scrollTop: 10 };
+  it("scrolls to the bottom when not already there", () => {
+    const el = { scrollHeight: 500, scrollTop: 10, clientHeight: 100 };
     pinToBottom(el);
-    expect(el.scrollTop).toBe(500);
+    expect(el.scrollTop).toBe(400);
+  });
+
+  it("skips when already pinned to the bottom", () => {
+    const el = { scrollHeight: 500, scrollTop: 400, clientHeight: 100 };
+    pinToBottom(el);
+    expect(el.scrollTop).toBe(400);
   });
 });

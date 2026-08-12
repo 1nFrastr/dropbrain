@@ -740,7 +740,8 @@ a.ghost {
   align-items: center;
 }
 
-.chat-bubble.streaming {
+.chat-bubble.streaming,
+.chat-bubble.settled {
   animation: none;
 }
 
@@ -844,22 +845,30 @@ a.ghost {
 
 .chat-md pre {
   overflow-x: auto;
+  overflow-y: hidden;
   background: var(--code-bg);
   padding: 0.65rem 0.75rem;
   border-radius: 8px;
   border: 1px solid var(--line);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.chat-md pre::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .chat-md pre code,
 .chat-md pre code.hljs {
   display: block;
+  overflow: visible;
   background: transparent;
   padding: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.84em;
   line-height: 1.5;
   white-space: pre;
-  overflow-x: auto;
 }
 
 .chat-md a {
