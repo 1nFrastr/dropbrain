@@ -155,7 +155,7 @@ function titleFromMarkdown(markdown: string, fallback: string): string {
 }
 
 /** Strip YAML frontmatter and common page-chrome that pollutes quiz prompts. */
-export function cleanBrowserMarkdown(markdown: string): string {
+export function cleanPageMarkdown(markdown: string): string {
   let text = markdown.replace(/^\uFEFF/, "").trim();
 
   if (text.startsWith("---")) {
@@ -214,71 +214,89 @@ export function normalizeTextSource(content: string): FetchedSource {
   };
 }
 
-async function extractMarkdownResult(result: unknown): Promise<string> {
-  if (result instanceof Response) {
-    const text = await result.text();
-    if (!result.ok) {
-      throw new Error(
-        `Browser Run request failed (${result.status}): ${text.slice(0, 200)}`,
-      );
-    }
-    try {
-      result = JSON.parse(text);
-    } catch {
-      return text;
-    }
-  }
-  if (typeof result === "string") {
-    return result;
-  }
-  if (result && typeof result === "object") {
-    const obj = result as Record<string, unknown>;
-    if (typeof obj.result === "string") {
-      return obj.result;
-    }
-    if (typeof obj.markdown === "string") {
-      return obj.markdown;
-    }
-    if (typeof obj.content === "string") {
-      return obj.content;
-    }
-    if (obj.data && typeof obj.data === "object") {
-      const data = obj.data as Record<string, unknown>;
-      if (typeof data.result === "string") return data.result;
-      if (typeof data.markdown === "string") return data.markdown;
-    }
-  }
-  throw new Error("Unexpected Browser Run markdown response shape.");
-}
+type FirecrawlResponse = {
+  success?: boolean;
+  error?: string;
+  data?: {
+    markdown?: string;
+    metadata?: {
+      title?: string;
+    };
+  };
+};
+
+const FIRECRAWL_SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape";
 
 const inflightFetches = new Map<string, Promise<FetchedSource>>();
 
 export async function fetchSource(
-  browser: Env["BROWSER"],
+  apiKey: string | undefined,
   url: string,
 ): Promise<FetchedSource> {
   const normalized = normalizePageUrl(url);
 
   try {
-    const result = await browser.quickAction("markdown", {
-      url: normalized,
-      gotoOptions: { waitUntil: "networkidle2" },
+    const headers = new Headers({ "Content-Type": "application/json" });
+    if (apiKey?.trim()) {
+      headers.set("Authorization", `Bearer ${apiKey.trim()}`);
+    }
+
+    const response = await fetch(FIRECRAWL_SCRAPE_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        url: normalized,
+        formats: ["markdown"],
+        onlyMainContent: true,
+      }),
     });
-    const markdown = cleanBrowserMarkdown(
-      await extractMarkdownResult(result),
-    );
+    const raw = await response.text();
+    let result: FirecrawlResponse;
+    try {
+      result = JSON.parse(raw) as FirecrawlResponse;
+    } catch {
+      throw new Error(
+        `Firecrawl returned an invalid response (${response.status}).`,
+      );
+    }
+    if (!response.ok || result.success === false) {
+      throw new Error(
+        result.error ||
+          `Firecrawl request failed (${response.status}): ${raw.slice(0, 200)}`,
+      );
+    }
+
+    const extracted = result.data?.markdown;
+    if (typeof extracted !== "string") {
+      throw new Error("Firecrawl returned no Markdown content.");
+    }
+
+    const markdown = cleanPageMarkdown(extracted);
     assertUsableSourceBody(markdown);
     const { text: body, truncated } = clampSourceBody(markdown);
+    const metadataTitle = result.data?.metadata?.title?.trim();
     return {
-      title: titleFromMarkdown(body, new URL(normalized).hostname),
+      title: metadataTitle
+        ? metadataTitle.slice(0, 200)
+        : titleFromMarkdown(body, new URL(normalized).hostname),
       markdown: body,
       truncated,
     };
   } catch (err) {
     if (err instanceof UnusableSourceError) throw err;
     const message = err instanceof Error ? err.message : String(err);
+    if (/rate.?limit|quota|429/i.test(message)) {
+      throw new Error(
+        "Firecrawl rate limit reached. Configure FIRECRAWL_API_KEY or try again later.",
+      );
+    }
+    if (/unauthorized|authentication|401/i.test(message)) {
+      throw new Error(
+        "Firecrawl authentication failed. Check FIRECRAWL_API_KEY.",
+      );
+    }
     if (
-      /timeout|blocked|403|401|captcha|anti.?bot|navigation/i.test(message)
+      /timeout|blocked|403|captcha|anti.?bot/i.test(message)
     ) {
       throw new Error(`Failed to fetch page (blocked or timed out): ${normalized}`);
     }
@@ -288,14 +306,14 @@ export async function fetchSource(
 
 /** Deduplicate concurrent fetches for the same canonical URL within an isolate. */
 export function fetchSourceDeduped(
-  browser: Env["BROWSER"],
+  apiKey: string | undefined,
   url: string,
 ): Promise<FetchedSource> {
   const normalized = normalizePageUrl(url);
   const existing = inflightFetches.get(normalized);
   if (existing) return existing;
 
-  const pending = fetchSource(browser, normalized).finally(() => {
+  const pending = fetchSource(apiKey, normalized).finally(() => {
     inflightFetches.delete(normalized);
   });
   inflightFetches.set(normalized, pending);
@@ -316,6 +334,7 @@ export async function resolveUrlSource(
 ): Promise<{
   sourceId: string;
   title: string;
+  markdown: string;
   truncated: boolean;
   cached: boolean;
 }> {
@@ -329,6 +348,7 @@ export async function resolveUrlSource(
       return {
         sourceId: existing.id,
         title: existing.title,
+        markdown: existing.body_md,
         truncated: isTruncatedBody(existing.body_md),
         cached: true,
       };
@@ -344,6 +364,7 @@ export async function resolveUrlSource(
       return {
         sourceId: raced.id,
         title: raced.title,
+        markdown: raced.body_md,
         truncated: isTruncatedBody(raced.body_md),
         cached: true,
       };
@@ -361,6 +382,7 @@ export async function resolveUrlSource(
   return {
     sourceId: id,
     title: fetched.title,
+    markdown: fetched.markdown,
     truncated: fetched.truncated,
     cached: false,
   };

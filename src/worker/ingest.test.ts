@@ -1,8 +1,9 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assertUsableSourceBody,
-  cleanBrowserMarkdown,
+  cleanPageMarkdown,
   clearInflightFetchesForTests,
+  fetchSource,
   isTruncatedBody,
   isUrlSourceCacheFresh,
   MIN_USABLE_PLAIN_CHARS,
@@ -16,6 +17,10 @@ import {
   type UrlSourceStore,
 } from "./ingest";
 import { MAX_BODY_CHARS, SOURCE_URL_CACHE_TTL_DAYS } from "./types";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("normalizePageUrl", () => {
   it("lowercases host and strips hash / trailing slash", () => {
@@ -40,9 +45,9 @@ describe("normalizePageUrl", () => {
   });
 });
 
-describe("cleanBrowserMarkdown", () => {
+describe("cleanPageMarkdown", () => {
   it("strips YAML frontmatter and skip/logo chrome before content", () => {
-    const cleaned = cleanBrowserMarkdown(`---
+    const cleaned = cleanPageMarkdown(`---
 title: "Demo | Learn Temporal"
 meta:
   description: "x"
@@ -61,6 +66,69 @@ Workflows are durable.`);
     expect(cleaned).toContain("Workflows are durable.");
     expect(cleaned).not.toContain("Skip to main content");
     expect(cleaned).not.toContain("title:");
+  });
+});
+
+describe("fetchSource", () => {
+  it("requests only the main Markdown content from Firecrawl", async () => {
+    const markdown =
+      "# Clean article\n\n" +
+      "This is the extracted article body without navigation or sidebars. ".repeat(
+        6,
+      );
+    const request = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            markdown,
+            metadata: { title: "Canonical page title" },
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", request);
+
+    const result = await fetchSource(undefined, "https://example.com/article");
+
+    expect(result).toMatchObject({
+      title: "Canonical page title",
+      markdown: markdown.trim(),
+      truncated: false,
+    });
+    const [endpoint, init] = request.mock.calls[0]!;
+    expect(endpoint).toBe("https://api.firecrawl.dev/v2/scrape");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      url: "https://example.com/article",
+      formats: ["markdown"],
+      onlyMainContent: true,
+    });
+    expect(new Headers(init?.headers).has("Authorization")).toBe(false);
+  });
+
+  it("uses the Firecrawl API key when configured", async () => {
+    const markdown =
+      "# Authenticated article\n\n" +
+      "Enough useful article content for quiz generation. ".repeat(8);
+    const request = vi.fn(async () =>
+      Response.json({
+        success: true,
+        data: { markdown },
+      }),
+    );
+    vi.stubGlobal("fetch", request);
+
+    const result = await fetchSource(
+      " fc-test-key ",
+      "https://example.com/private",
+    );
+
+    const [, init] = request.mock.calls[0]!;
+    expect(result.title).toBe("Authenticated article");
+    expect(new Headers(init?.headers).get("Authorization")).toBe(
+      "Bearer fc-test-key",
+    );
   });
 });
 
@@ -208,6 +276,7 @@ describe("resolveUrlSource cache", () => {
     expect(result).toEqual({
       sourceId: "cached-1",
       title: "Cached page",
+      markdown: "# Cached page\n\nHello",
       truncated: false,
       cached: true,
     });
@@ -242,6 +311,7 @@ describe("resolveUrlSource cache", () => {
       sourceId: "fresh-id",
       cached: false,
       title: "Fresh",
+      markdown: "# Fresh",
     });
     expect(fetchPage).toHaveBeenCalledTimes(1);
   });

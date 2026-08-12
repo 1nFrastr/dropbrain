@@ -32,6 +32,8 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export interface CreateSourceResponse {
   sourceId: string;
   title: string;
+  /** Present for fetched URLs so the user can inspect extraction before generation. */
+  markdown?: string;
   truncated: boolean;
   cached?: boolean;
 }

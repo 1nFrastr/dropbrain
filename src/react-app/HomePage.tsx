@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Download,
+  Eye,
   FileText,
   Link2,
   MessageCircle,
@@ -16,7 +17,9 @@ import {
   getQuiz,
   streamAskAnything,
   type ChatTurn,
+  type CreateSourceResponse,
 } from "./api";
+import ChatMarkdown from "./ChatMarkdown";
 import ChatSidebar from "./ChatSidebar";
 import {
   askAnythingSuggestions,
@@ -39,6 +42,7 @@ import {
 
 type Tab = "text" | "url";
 type GenPhase = "idle" | "fetching" | "writing" | "done";
+type UrlPreview = CreateSourceResponse & { markdown: string };
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -47,6 +51,8 @@ export default function HomePage() {
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
   const [useCache, setUseCache] = useState(true);
+  const [urlPreview, setUrlPreview] = useState<UrlPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [count, setCount] = useState(8);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -81,17 +87,39 @@ export default function HomePage() {
     saveLanguage(next);
   }
 
+  async function onFetchPreview() {
+    setError(null);
+    setPreviewing(true);
+    try {
+      const source = await createUrlSource(url.trim(), { useCache });
+      if (!source.markdown) {
+        throw new Error("The page was fetched, but no preview was returned.");
+      }
+      setUrlPreview({ ...source, markdown: source.markdown });
+    } catch (err) {
+      setUrlPreview(null);
+      setError(err instanceof Error ? err.message : "Could not fetch page");
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
   async function onGenerate() {
+    if (tab === "url" && !urlPreview) {
+      setError("Fetch and preview the page before generating a quiz.");
+      return;
+    }
+
     setError(null);
     setBusy(true);
     setGenerating(true);
-    setGenPhase(tab === "url" ? "fetching" : "writing");
+    setGenPhase("writing");
 
     try {
       const source =
         tab === "text"
           ? await createTextSource(text)
-          : await createUrlSource(url.trim(), { useCache });
+          : urlPreview!;
 
       setGenPhase("writing");
       const created = await createQuiz(source.sourceId, count, contentLang);
@@ -140,18 +168,20 @@ export default function HomePage() {
           <h1 className="brand">Dropbrain</h1>
           <p className="tagline">Working on it…</p>
           <ul className="steps">
-            <li
-              className={
-                genPhase === "fetching"
-                  ? "active"
-                  : genPhase === "writing" || genPhase === "done"
-                    ? "done"
-                    : ""
-              }
-            >
-              <span className="dot" />
-              Fetching page
-            </li>
+            {tab === "url" && (
+              <li
+                className={
+                  genPhase === "fetching"
+                    ? "active"
+                    : genPhase === "writing" || genPhase === "done"
+                      ? "done"
+                      : ""
+                }
+              >
+                <span className="dot" />
+                Page fetched and previewed
+              </li>
+            )}
             <li
               className={
                 genPhase === "writing"
@@ -230,7 +260,11 @@ export default function HomePage() {
                 className="field url"
                 type="url"
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                disabled={previewing}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setUrlPreview(null);
+                }}
                 placeholder="https://example.com/article"
                 aria-label="Page URL"
               />
@@ -238,11 +272,36 @@ export default function HomePage() {
                 <input
                   type="checkbox"
                   checked={useCache}
-                  onChange={(e) => setUseCache(e.target.checked)}
+                  disabled={previewing}
+                  onChange={(e) => {
+                    setUseCache(e.target.checked);
+                    setUrlPreview(null);
+                  }}
                 />
                 <span>Use cached page when available (10 days)</span>
               </label>
             </div>
+          )}
+
+          {tab === "url" && urlPreview && (
+            <section className="source-preview" aria-live="polite">
+              <div className="source-preview-head">
+                <div>
+                  <p className="source-preview-kicker">Page ready</p>
+                  <h2>{urlPreview.title}</h2>
+                </div>
+                <span className="source-preview-badge">
+                  {urlPreview.cached ? "Cached" : "Fresh fetch"}
+                </span>
+              </div>
+              <p className="source-preview-meta">
+                {urlPreview.markdown.length.toLocaleString()} characters
+                {urlPreview.truncated ? " · truncated to the ingest limit" : ""}
+              </p>
+              <div className="source-preview-body">
+                <ChatMarkdown>{urlPreview.markdown}</ChatMarkdown>
+              </div>
+            </section>
           )}
 
           <div className="controls">
@@ -273,14 +332,39 @@ export default function HomePage() {
                 <option value="en">{contentLanguageLabel("en")}</option>
               </select>
             </div>
+            {tab === "url" && (
+              <button
+                type="button"
+                className="ghost btn-with-icon"
+                disabled={busy || previewing || url.trim().length < 8}
+                onClick={() => void onFetchPreview()}
+              >
+                {previewing ? (
+                  <RefreshCw
+                    className="spin"
+                    size={16}
+                    strokeWidth={2}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Eye size={16} strokeWidth={2} aria-hidden="true" />
+                )}
+                {previewing
+                  ? "Fetching page…"
+                  : urlPreview
+                    ? "Fetch again"
+                    : "Fetch & preview"}
+              </button>
+            )}
             <button
               type="button"
               className="cta btn-with-icon"
               disabled={
                 busy ||
+                previewing ||
                 (tab === "text"
                   ? text.trim().length < 40
-                  : url.trim().length < 8)
+                  : urlPreview === null)
               }
               onClick={() => void onGenerate()}
             >

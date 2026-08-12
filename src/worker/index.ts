@@ -77,7 +77,7 @@ app.post("/api/sources", async (c) => {
     if (body.type === "url") {
       const resolved = await resolveUrlSource(
         d1UrlSourceStore(c.env.DB),
-        (url) => fetchSourceDeduped(c.env.BROWSER, url),
+        (url) => fetchSourceDeduped(c.env.FIRECRAWL_API_KEY, url),
         body.url ?? "",
         () => crypto.randomUUID(),
         { useCache: body.useCache !== false },
@@ -85,6 +85,7 @@ app.post("/api/sources", async (c) => {
       return c.json({
         sourceId: resolved.sourceId,
         title: resolved.title,
+        markdown: resolved.markdown,
         truncated: resolved.truncated,
         cached: resolved.cached,
       });

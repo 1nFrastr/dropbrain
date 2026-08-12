@@ -21,10 +21,6 @@
       "migrations_dir": "migrations"
     }
   ],
-  "browser": {
-    "binding": "BROWSER",
-    "remote": true
-  },
   "ai": {
     "binding": "AI",
     "remote": true

@@ -139,6 +139,72 @@
   accent-color: var(--accent);
 }
 
+.source-preview {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 14px;
+  background: var(--surface);
+  animation: rise 0.35s ease both;
+}
+
+.source-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.source-preview-kicker {
+  margin: 0 0 0.2rem;
+  color: var(--ok);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.source-preview h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  line-height: 1.25;
+}
+
+.source-preview-badge {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.source-preview-meta {
+  margin: 0.45rem 0 0.8rem;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.source-preview-body {
+  max-height: 360px;
+  overflow: auto;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-solid);
+}
+
+.source-preview-body .chat-md {
+  font-size: 0.88rem;
+}
+
+.source-preview-body img {
+  max-width: 100%;
+  height: auto;
+}
+
 .controls {
   display: flex;
   flex-wrap: wrap;
@@ -180,6 +246,15 @@
 .cta:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.ghost:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
 }
 
 .error {
@@ -921,6 +996,12 @@ a.ghost {
   }
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 560px) {
   .app {
     padding-top: 1.75rem;
@@ -939,6 +1020,7 @@ a.ghost {
   }
 
   .controls .cta,
+  .controls .ghost,
   .quiz-nav .cta,
   .quiz-nav .ghost,
   .nav-row .cta,
@@ -962,6 +1044,11 @@ a.ghost {
 
   .history-action {
     flex: 1;
+  }
+
+  .source-preview-head {
+    flex-direction: column;
+    gap: 0.55rem;
   }
 
   .chat-sidebar {

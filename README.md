@@ -8,7 +8,7 @@ Paste text or a web URL, generate active-recall multiple-choice quizzes, and rev
 
 - Hono API on Cloudflare Workers
 - React SPA + Vite (`@cloudflare/vite-plugin`)
-- D1, Browser Run (`quickAction("markdown")`), AI Gateway / Workers AI
+- D1, Firecrawl Scrape API, AI Gateway / Workers AI
 
 ## Setup
 
@@ -18,17 +18,10 @@ Requires [pnpm](https://pnpm.io) and a global [Wrangler](https://developers.clou
 pnpm install
 cp .dev.vars.example .dev.vars
 # Fill OPENAI_API_KEY + CF_ACCOUNT_ID (optional AI_GATEWAY_ID)
+# FIRECRAWL_API_KEY is optional for testing, recommended for production.
 pnpm run db:migrate:local
 pnpm run dev
 ```
-
-For URL ingest via Browser Run Quick Actions, prefer:
-
-```bash
-wrangler dev --remote
-```
-
-(or use the Vite cloudflare plugin with remote bindings if configured).
 
 ## API
 
