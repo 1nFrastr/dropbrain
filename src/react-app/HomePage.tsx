@@ -67,7 +67,7 @@ export default function HomePage() {
   const [askOpen, setAskOpen] = useState(false);
   const [askMessages, setAskMessages] = useState<ChatTurn[]>([]);
   const [info, setInfo] = useState<QuizInfo | null>(null);
-  const [showOptions, setShowOptions] = useState(loadConfirmBeforeGen);
+  const [showOptions, setShowOptions] = useState(false);
   const pendingGen = useRef<
     | { kind: "url" }
     | { kind: "fork"; sourceId: string; count: number; language: AppLanguage }
@@ -456,7 +456,10 @@ export default function HomePage() {
 
           {showOptions && (
             <div className="option-chips">
-              <label className="chip-toggle">
+              <label
+                className="chip-toggle"
+                data-tip="Use a saved copy if this page was fetched recently."
+              >
                 <input
                   type="checkbox"
                   checked={useCache}
@@ -468,7 +471,10 @@ export default function HomePage() {
                 />
                 Cache
               </label>
-              <label className="chip-toggle">
+              <label
+                className="chip-toggle"
+                data-tip="Show the page first so you can check it before generating."
+              >
                 <input
                   type="checkbox"
                   checked={confirmBeforeGen}

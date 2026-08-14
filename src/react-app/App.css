@@ -275,6 +275,7 @@
 }
 
 .chip-toggle {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -286,6 +287,33 @@
   font-size: 0.8rem;
   cursor: pointer;
   user-select: none;
+}
+
+.chip-toggle[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 8;
+  width: max-content;
+  max-width: min(18rem, 70vw);
+  padding: 0.4rem 0.6rem;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.35;
+  opacity: 0;
+  transform: translateY(2px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.chip-toggle[data-tip]:hover::after,
+.chip-toggle[data-tip]:focus-within::after {
+  opacity: 1;
+  transform: none;
 }
 
 .chip-toggle:has(input:checked) {
