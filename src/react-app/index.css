@@ -86,6 +86,11 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 html,
 body,
 #root {
@@ -95,11 +100,19 @@ body,
 body {
   margin: 0;
   min-width: 320px;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   background:
     radial-gradient(1200px 500px at 10% -10%, var(--body-spot-1), transparent 55%),
     radial-gradient(900px 420px at 100% 0%, var(--body-spot-2), transparent 50%),
     linear-gradient(180deg, var(--body-top) 0%, var(--paper) 40%, var(--body-bottom) 100%);
   background-attachment: fixed;
+}
+
+@media (max-width: 640px) {
+  body {
+    background-attachment: scroll;
+  }
 }
 
 button,
@@ -110,8 +123,19 @@ select {
   color-scheme: inherit;
 }
 
+button,
+a,
+label,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
 button {
   cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 a {

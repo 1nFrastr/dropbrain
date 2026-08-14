@@ -92,11 +92,16 @@ export default function ChatSidebar({
 
   useEffect(() => {
     if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
   }, [open, onClose]);
 
   useEffect(() => {
@@ -388,9 +393,10 @@ export default function ChatSidebar({
             type="submit"
             className="cta chat-send btn-with-icon"
             disabled={sending || !draft.trim()}
+            aria-label="Send"
           >
             <SendHorizontal size={16} strokeWidth={2} aria-hidden="true" />
-            Send
+            <span className="chat-send-label">Send</span>
           </button>
         </form>
       </aside>

@@ -323,9 +323,9 @@ export default function QuizPage() {
               <House size={15} strokeWidth={2} aria-hidden="true" />
               Home
             </Link>
-            <span>{quiz.title}</span>
+            <span className="quiz-source-title">{quiz.title}</span>
           </div>
-          <span>{progressLabel}</span>
+          <span className="quiz-progress">{progressLabel}</span>
         </div>
         <h2 className="stem">{current.stem}</h2>
         <div className="options" role="listbox" aria-label="Answer choices">

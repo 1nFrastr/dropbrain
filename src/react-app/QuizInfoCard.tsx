@@ -68,8 +68,18 @@ export default function QuizInfoCard({ info, busy = false, onClose, onFork }: Pr
         <div>
           <p className="quiz-info-kicker">Quiz info</p>
           <h2 id="quiz-info-title">{info.title}</h2>
-          {hasLink && (
-            <p className="quiz-info-host">{compactUrl(info.sourceUrl!)}</p>
+          {hasLink ? (
+            <a
+              className="quiz-info-host quiz-info-link"
+              href={info.sourceUrl!}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span>{compactUrl(info.sourceUrl!)}</span>
+              <ExternalLink size={14} strokeWidth={2} aria-hidden="true" />
+            </a>
+          ) : (
+            <p className="quiz-info-host muted">No original URL</p>
           )}
         </div>
         <button
@@ -83,7 +93,7 @@ export default function QuizInfoCard({ info, busy = false, onClose, onFork }: Pr
       </header>
 
       <dl className="quiz-info-facts">
-        <div>
+        <div className="quiz-info-fact-source">
           <dt>Source</dt>
           <dd>
             {hasLink ? (
@@ -101,22 +111,27 @@ export default function QuizInfoCard({ info, busy = false, onClose, onFork }: Pr
             )}
           </dd>
         </div>
-        <div>
+        <div className="quiz-info-fact-stat">
           <dt>Questions</dt>
           <dd>{info.questionCount}</dd>
         </div>
-        <div>
+        <div className="quiz-info-fact-stat">
           <dt>Language</dt>
           <dd>{contentLanguageLabel(info.language)}</dd>
         </div>
         {info.createdAt != null && (
-          <div>
+          <div className="quiz-info-fact-wide">
             <dt>Saved</dt>
-            <dd>{new Date(info.createdAt).toLocaleString()}</dd>
+            <dd>
+              {new Date(info.createdAt).toLocaleString(undefined, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </dd>
           </div>
         )}
         {info.truncated ? (
-          <div>
+          <div className="quiz-info-fact-wide">
             <dt>Extract</dt>
             <dd>Truncated to the ingest limit</dd>
           </div>
@@ -128,69 +143,73 @@ export default function QuizInfoCard({ info, busy = false, onClose, onFork }: Pr
           <ChatMarkdown>{info.markdown}</ChatMarkdown>
         </div>
       ) : (
-        <p className="muted">Page preview is not available offline yet.</p>
+        <p className="muted quiz-info-preview-empty">
+          Page preview is not available offline yet.
+        </p>
       )}
 
-      {forking ? (
-        <div className="quiz-info-fork">
-          <p className="quiz-info-fork-kicker">New quiz from this page</p>
-          <div className="tune-row">
-            <div className="lang-switch" role="group" aria-label="Content language">
+      <div className="quiz-info-foot">
+        {forking ? (
+          <div className="quiz-info-fork">
+            <p className="quiz-info-fork-kicker">New quiz from this page</p>
+            <div className="tune-row">
+              <div className="lang-switch" role="group" aria-label="Content language">
+                <button
+                  type="button"
+                  aria-pressed={forkLang === "zh"}
+                  disabled={busy}
+                  onClick={() => setForkLang("zh")}
+                >
+                  中
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={forkLang === "en"}
+                  disabled={busy}
+                  onClick={() => setForkLang("en")}
+                >
+                  EN
+                </button>
+              </div>
+              <QuizCountControl
+                id="fork-count"
+                value={forkCount}
+                disabled={busy}
+                onChange={setForkCount}
+              />
+            </div>
+            <div className="generating-actions">
               <button
                 type="button"
-                aria-pressed={forkLang === "zh"}
+                className="cta btn-with-icon"
                 disabled={busy}
-                onClick={() => setForkLang("zh")}
+                onClick={confirmFork}
               >
-                中
+                <Sparkles size={16} strokeWidth={2} aria-hidden="true" />
+                Gen
               </button>
               <button
                 type="button"
-                aria-pressed={forkLang === "en"}
+                className="ghost"
                 disabled={busy}
-                onClick={() => setForkLang("en")}
+                onClick={() => setForking(false)}
               >
-                EN
+                Cancel
               </button>
             </div>
-            <QuizCountControl
-              id="fork-count"
-              value={forkCount}
-              disabled={busy}
-              onChange={setForkCount}
-            />
           </div>
-          <div className="generating-actions">
-            <button
-              type="button"
-              className="cta btn-with-icon"
-              disabled={busy}
-              onClick={confirmFork}
-            >
-              <Sparkles size={16} strokeWidth={2} aria-hidden="true" />
-              Gen
-            </button>
-            <button
-              type="button"
-              className="ghost"
-              disabled={busy}
-              onClick={() => setForking(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          className="ghost btn-with-icon"
-          disabled={busy}
-          onClick={startFork}
-        >
-          <GitFork size={16} strokeWidth={2} aria-hidden="true" />
-          Fork
-        </button>
-      )}
+        ) : (
+          <button
+            type="button"
+            className="ghost btn-with-icon quiz-info-fork-btn"
+            disabled={busy}
+            onClick={startFork}
+          >
+            <GitFork size={16} strokeWidth={2} aria-hidden="true" />
+            Fork
+          </button>
+        )}
+      </div>
     </section>
   );
 }

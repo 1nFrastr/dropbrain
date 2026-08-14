@@ -3,6 +3,7 @@ import {
   Download,
   Info,
   MessageCircle,
+  MoreHorizontal,
   RefreshCw,
   SlidersHorizontal,
   Sparkles,
@@ -67,6 +68,7 @@ export default function HomePage() {
   const [askOpen, setAskOpen] = useState(false);
   const [askMessages, setAskMessages] = useState<ChatTurn[]>([]);
   const [info, setInfo] = useState<QuizInfo | null>(null);
+  const [historyMenuId, setHistoryMenuId] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
   const pendingGen = useRef<
     | { kind: "url" }
@@ -95,6 +97,24 @@ export default function HomePage() {
       window.removeEventListener("keydown", onKey);
     };
   }, [info]);
+
+  useEffect(() => {
+    if (!historyMenuId) return;
+    function onPointer(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".history-actions")) return;
+      setHistoryMenuId(null);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setHistoryMenuId(null);
+    }
+    document.addEventListener("pointerdown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [historyMenuId]);
 
   async function refreshHistory() {
     try {
@@ -433,7 +453,14 @@ export default function HomePage() {
               ) : (
                 <Sparkles size={18} strokeWidth={2} aria-hidden="true" />
               )}
-              <span>{previewing ? "…" : "Gen"}</span>
+              {previewing ? (
+                <span>…</span>
+              ) : (
+                <>
+                  <span className="composer-go-short">Gen</span>
+                  <span className="composer-go-full">Generate</span>
+                </>
+              )}
             </button>
           </div>
 
@@ -551,7 +578,14 @@ export default function HomePage() {
         ) : (
           <ul className="history-list">
             {history.map((item) => (
-              <li key={item.id} className="history-item">
+              <li
+                key={item.id}
+                className={
+                  historyMenuId === item.id
+                    ? "history-item actions-open"
+                    : "history-item"
+                }
+              >
                 <Link className="history-link" to={`/quiz/${item.id}`}>
                   <span className="history-title">{item.title}</span>
                   <span className="history-meta">
@@ -561,31 +595,61 @@ export default function HomePage() {
                 <div className="history-actions">
                   <button
                     type="button"
-                    className="ghost icon-btn"
-                    aria-label={`Quiz info for ${item.title}`}
-                    title="Info"
-                    onClick={() => void onOpenInfo(item.id)}
+                    className="ghost icon-btn history-more"
+                    aria-label={`More actions for ${item.title}`}
+                    aria-haspopup="menu"
+                    aria-expanded={historyMenuId === item.id}
+                    aria-pressed={historyMenuId === item.id}
+                    onClick={() =>
+                      setHistoryMenuId((id) => (id === item.id ? null : item.id))
+                    }
                   >
-                    <Info size={16} strokeWidth={2} aria-hidden="true" />
+                    <MoreHorizontal size={16} strokeWidth={2} aria-hidden="true" />
                   </button>
-                  <button
-                    type="button"
-                    className="ghost icon-btn"
-                    aria-label={`Export ${item.title}`}
-                    title="Export"
-                    onClick={() => void onExport(item.id)}
-                  >
-                    <Download size={16} strokeWidth={2} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost icon-btn"
-                    aria-label={`Delete ${item.title}`}
-                    title="Delete"
-                    onClick={() => void onDelete(item.id)}
-                  >
-                    <Trash2 size={16} strokeWidth={2} aria-hidden="true" />
-                  </button>
+                  <div className="history-menu" role="menu">
+                    <button
+                      type="button"
+                      className="ghost icon-btn"
+                      role="menuitem"
+                      aria-label={`Quiz info for ${item.title}`}
+                      title="Info"
+                      onClick={() => {
+                        setHistoryMenuId(null);
+                        void onOpenInfo(item.id);
+                      }}
+                    >
+                      <Info size={16} strokeWidth={2} aria-hidden="true" />
+                      <span className="history-menu-label">Info</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost icon-btn"
+                      role="menuitem"
+                      aria-label={`Export ${item.title}`}
+                      title="Export"
+                      onClick={() => {
+                        setHistoryMenuId(null);
+                        void onExport(item.id);
+                      }}
+                    >
+                      <Download size={16} strokeWidth={2} aria-hidden="true" />
+                      <span className="history-menu-label">Export</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost icon-btn history-menu-delete"
+                      role="menuitem"
+                      aria-label={`Delete ${item.title}`}
+                      title="Delete"
+                      onClick={() => {
+                        setHistoryMenuId(null);
+                        void onDelete(item.id);
+                      }}
+                    >
+                      <Trash2 size={16} strokeWidth={2} aria-hidden="true" />
+                      <span className="history-menu-label">Delete</span>
+                    </button>
+                  </div>
                 </div>
               </li>
             ))}
