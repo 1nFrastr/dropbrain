@@ -64,6 +64,10 @@ export interface QuizPayload {
   id: string;
   sourceId: string;
   title: string;
+  sourceUrl?: string | null;
+  markdown?: string;
+  truncated?: boolean;
+  createdAt?: string;
   questions: QuizQuestion[];
   /** Present after download so the client can grade without the network. */
   answerKey?: AnswerKeyEntry[];

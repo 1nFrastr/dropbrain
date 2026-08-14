@@ -6,6 +6,7 @@ import {
   d1UrlSourceStore,
   resolveUrlSource,
   UnusableSourceError,
+  isTruncatedBody,
 } from "./ingest";
 import {
   generateMcq,
@@ -186,7 +187,8 @@ app.post("/api/quizzes", async (c) => {
 app.get("/api/quizzes/:id", async (c) => {
   const quizId = c.req.param("id");
   const quiz = await c.env.DB.prepare(
-    `SELECT q.id, q.source_id, q.created_at, s.title as source_title
+    `SELECT q.id, q.source_id, q.created_at, s.title as source_title,
+            s.url as source_url, s.body_md
      FROM quizzes q JOIN sources s ON s.id = q.source_id
      WHERE q.id = ?`,
   )
@@ -196,6 +198,8 @@ app.get("/api/quizzes/:id", async (c) => {
       source_id: string;
       created_at: string;
       source_title: string;
+      source_url: string | null;
+      body_md: string;
     }>();
 
   if (!quiz) {
@@ -228,6 +232,10 @@ app.get("/api/quizzes/:id", async (c) => {
     id: quiz.id,
     sourceId: quiz.source_id,
     title: quiz.source_title,
+    sourceUrl: quiz.source_url,
+    markdown: quiz.body_md,
+    truncated: isTruncatedBody(quiz.body_md),
+    createdAt: quiz.created_at,
     questions,
     answerKey,
   });

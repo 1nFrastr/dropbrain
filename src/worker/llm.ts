@@ -59,9 +59,10 @@ Step 2 — Only if usable: create exactly ${count} multiple-choice questions fro
 
 Rules:
 - Base every question and explanation strictly on the material. Do not invent facts.
-- Each question: one stem, exactly 4 options, one correct answer.
+- Each question: one complete interrogative stem (not a topic title like "Kubernetes"), exactly 4 options, one correct answer.
+- Options must be four distinct, non-empty answer texts. Never use empty strings, never use "A"/"B"/"C"/"D" as the option text (those are labels only).
 - Distractors must sound like plausible misunderstandings of the material.
-- Explanation: 1–2 sentences citing what in the material supports the correct answer.
+- Explanation: 1–2 sentences citing what in the material supports the correct answer. Do not repeat the stem or a single keyword.
 - tags: 1–3 short knowledge-point labels per question.
 - correctIndex is 0-based (0..3).
 - ${languageInstruction(lang)}
@@ -71,11 +72,16 @@ If usable, return ONLY valid JSON with this shape:
   "ok": true,
   "questions": [
     {
-      "stem": "string",
-      "options": ["A", "B", "C", "D"],
+      "stem": "What component schedules application containers onto nodes?",
+      "options": [
+        "The Control Plane",
+        "A container runtime such as containerd",
+        "The Minikube CLI",
+        "The Kubernetes dashboard"
+      ],
       "correctIndex": 0,
-      "explanation": "string",
-      "tags": ["topic"]
+      "explanation": "The material states the Control Plane coordinates scheduling of application containers on cluster nodes.",
+      "tags": ["control-plane"]
     }
   ]
 }
@@ -92,6 +98,81 @@ function isStringArray(value: unknown, length?: number): value is string[] {
   }
   if (length !== undefined && value.length !== length) return false;
   return true;
+}
+
+const MIN_EXPLANATION_CHARS = 16;
+
+function looksLikeQuestionStem(stem: string): boolean {
+  const s = stem.trim();
+  if (/[?？]/.test(s)) return true;
+  if (
+    /(什么|为何|为什么|哪|如何|怎样|是否|吗|Who|What|When|Where|Why|How|Which)/i.test(
+      s,
+    )
+  ) {
+    return true;
+  }
+  if (/\s/.test(s) && s.length >= 12) return true;
+  return s.length >= 24;
+}
+
+function isLetterPlaceholderOptions(options: string[]): boolean {
+  return options.every((o) => /^[A-D][.)]?\s*$/i.test(o.trim()));
+}
+
+function parseQuestion(raw: unknown): GeneratedQuestion {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Invalid question object.");
+  }
+  const row = raw as Record<string, unknown>;
+  if (typeof row.stem !== "string" || !row.stem.trim()) {
+    throw new Error("Question missing stem.");
+  }
+  const stem = row.stem.trim();
+  if (!looksLikeQuestionStem(stem)) {
+    throw new Error(
+      "Question stem must be a complete question, not a topic title.",
+    );
+  }
+  if (!isStringArray(row.options, 4)) {
+    throw new Error("Question must have exactly 4 string options.");
+  }
+  const options = row.options.map((o) => o.trim());
+  if (options.some((o) => o.length === 0)) {
+    throw new Error("Question options must be non-empty.");
+  }
+  if (new Set(options).size < 4) {
+    throw new Error("Question options must be four distinct answers.");
+  }
+  if (isLetterPlaceholderOptions(options)) {
+    throw new Error("Question options cannot be placeholder letters A–D.");
+  }
+  if (
+    typeof row.correctIndex !== "number" ||
+    !Number.isInteger(row.correctIndex) ||
+    row.correctIndex < 0 ||
+    row.correctIndex > 3
+  ) {
+    throw new Error("correctIndex must be an integer 0..3.");
+  }
+  if (typeof row.explanation !== "string" || !row.explanation.trim()) {
+    throw new Error("Question missing explanation.");
+  }
+  const explanation = row.explanation.trim();
+  if (explanation.length < MIN_EXPLANATION_CHARS) {
+    throw new Error("Question explanation is too short.");
+  }
+  const tags = Array.isArray(row.tags)
+    ? row.tags.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+    : [];
+
+  return {
+    stem,
+    options: options as [string, string, string, string],
+    correctIndex: row.correctIndex,
+    explanation,
+    tags: tags.slice(0, 3),
+  };
 }
 
 export function validateQuestions(
@@ -120,49 +201,24 @@ export function validateQuestions(
   if (!Array.isArray(questions) || questions.length === 0) {
     throw new Error("LLM response missing questions array.");
   }
-  if (questions.length < Math.min(3, expectedCount)) {
-    throw new Error(`Expected around ${expectedCount} questions, got ${questions.length}.`);
-  }
 
+  const minAcceptable = Math.min(3, expectedCount);
   const validated: GeneratedQuestion[] = [];
-  for (const q of questions.slice(0, expectedCount)) {
-    if (!q || typeof q !== "object") {
-      throw new Error("Invalid question object.");
+  let lastProblem = "";
+  for (const q of questions) {
+    if (validated.length >= expectedCount) break;
+    try {
+      validated.push(parseQuestion(q));
+    } catch (err) {
+      lastProblem = err instanceof Error ? err.message : String(err);
     }
-    const row = q as Record<string, unknown>;
-    if (typeof row.stem !== "string" || !row.stem.trim()) {
-      throw new Error("Question missing stem.");
-    }
-    if (!isStringArray(row.options, 4)) {
-      throw new Error("Question must have exactly 4 string options.");
-    }
-    if (
-      typeof row.correctIndex !== "number" ||
-      !Number.isInteger(row.correctIndex) ||
-      row.correctIndex < 0 ||
-      row.correctIndex > 3
-    ) {
-      throw new Error("correctIndex must be an integer 0..3.");
-    }
-    if (typeof row.explanation !== "string" || !row.explanation.trim()) {
-      throw new Error("Question missing explanation.");
-    }
-    const tags = Array.isArray(row.tags)
-      ? row.tags.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
-      : [];
-
-    validated.push({
-      stem: row.stem.trim(),
-      options: row.options.map((o) => o.trim()) as [
-        string,
-        string,
-        string,
-        string,
-      ],
-      correctIndex: row.correctIndex,
-      explanation: row.explanation.trim(),
-      tags: tags.slice(0, 3),
-    });
+  }
+  if (validated.length < minAcceptable) {
+    throw new Error(
+      `Expected around ${expectedCount} usable questions, got ${validated.length}.${
+        lastProblem ? ` ${lastProblem}` : ""
+      }`,
+    );
   }
   return validated;
 }
@@ -537,14 +593,22 @@ async function* streamChat(
   yield* streamWorkersAi(env, messages);
 }
 
+const MCQ_REPAIR_HINT =
+  "The previous JSON was invalid. Each stem must be a full question sentence. Each question needs four distinct non-empty option texts (not empty strings, not the letters A/B/C/D). Explanations must be 1–2 real sentences. Skip any malformed item and still return enough complete questions.";
+
+const MCQ_ATTEMPTS = 3;
+
 async function generateOnce(
   env: Env,
   material: string,
   count: number,
   lang: AppLanguage,
+  attempt: number,
 ): Promise<GeneratedQuestion[]> {
   const { text: limitedMaterial } = clampText(material, MAX_BODY_CHARS);
   const prompt = buildPrompt(limitedMaterial, count, lang);
+  const userContent =
+    attempt > 0 ? `${prompt}\n\nIMPORTANT: ${MCQ_REPAIR_HINT}` : prompt;
   const text = await completeChat(
     env,
     [
@@ -553,9 +617,9 @@ async function generateOnce(
         content:
           "You generate rigorous active-recall quizzes. First assess whether the material is usable study content; if not, return {\"ok\":false,\"reason\":\"...\"}. Otherwise return {\"ok\":true,\"questions\":[...]}. Reply with JSON only.",
       },
-      { role: "user", content: prompt },
+      { role: "user", content: userContent },
     ],
-    { json: true, temperature: 0.4 },
+    { json: true, temperature: attempt === 0 ? 0.4 : 0.6 },
   );
   const parsed = extractJson(text);
   return validateQuestions(parsed, count);
@@ -704,21 +768,18 @@ export async function generateMcq(
   // Defense in depth for cached / pasted sources that skipped the fetch gate.
   assertUsableSourceBody(material);
 
-  try {
-    return await generateOnce(env, material, count, lang);
-  } catch (firstErr) {
-    if (isNonRetryableMcqError(firstErr)) throw firstErr;
-    // One retry on schema / parse failure
+  const problems: string[] = [];
+  for (let attempt = 0; attempt < MCQ_ATTEMPTS; attempt += 1) {
     try {
-      return await generateOnce(env, material, count, lang);
-    } catch (secondErr) {
-      if (isNonRetryableMcqError(secondErr)) throw secondErr;
-      const a = firstErr instanceof Error ? firstErr.message : String(firstErr);
-      const b =
-        secondErr instanceof Error ? secondErr.message : String(secondErr);
-      throw new Error(`Quiz generation failed after retry: ${b} (first: ${a})`);
+      return await generateOnce(env, material, count, lang, attempt);
+    } catch (err) {
+      if (isNonRetryableMcqError(err)) throw err;
+      problems.push(err instanceof Error ? err.message : String(err));
     }
   }
+  throw new Error(
+    `Quiz generation failed after ${MCQ_ATTEMPTS} attempts: ${problems[problems.length - 1] ?? "unknown error"}`,
+  );
 }
 
 export function sseEncode(data: unknown): string {

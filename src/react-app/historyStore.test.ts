@@ -85,6 +85,26 @@ describe("historyStore", () => {
     expect(loaded?.quiz.answerKey).toBeUndefined();
   });
 
+  it("keeps source url and preview markdown", async () => {
+    const saved = await putQuizSession(
+      createSessionRecord(
+        {
+          ...quiz,
+          sourceUrl: "https://kubernetes.io/docs/cluster-intro/",
+          markdown: "# Cluster intro\n\nMinikube creates a local cluster.",
+          truncated: false,
+        },
+        "en",
+      ),
+    );
+    const loaded = await getQuizSession(saved.id);
+    expect(loaded?.quiz.sourceUrl).toBe(
+      "https://kubernetes.io/docs/cluster-intro/",
+    );
+    expect(loaded?.quiz.markdown).toMatch(/Minikube/);
+    expect(loaded?.quiz.truncated).toBe(false);
+  });
+
   it("deletes sessions", async () => {
     await putQuizSession(createSessionRecord(quiz, "en"));
     await deleteQuizSession("quiz-1");

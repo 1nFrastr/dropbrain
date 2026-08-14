@@ -1,18 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Download,
-  Eye,
-  FileText,
-  Link2,
+  Info,
   MessageCircle,
   RefreshCw,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   createQuiz,
-  createTextSource,
   createUrlSource,
   getQuiz,
   streamAskAnything,
@@ -22,8 +20,16 @@ import {
 import ChatMarkdown from "./ChatMarkdown";
 import ChatSidebar from "./ChatSidebar";
 import {
+  clampQuizCount,
+  loadConfirmBeforeGen,
+  loadQuizCount,
+  MAX_QUIZ_COUNT,
+  MIN_QUIZ_COUNT,
+  saveConfirmBeforeGen,
+  saveQuizCount,
+} from "./homePrefs";
+import {
   askAnythingSuggestions,
-  contentLanguageLabel,
   resolveInitialLanguage,
   saveLanguage,
   type AppLanguage,
@@ -39,21 +45,20 @@ import {
   putQuizSession,
   type QuizHistoryItem,
 } from "./historyStore";
+import QuizInfoCard, { type QuizInfo } from "./QuizInfoCard";
 
-type Tab = "text" | "url";
 type GenPhase = "idle" | "fetching" | "writing" | "done";
 type UrlPreview = CreateSourceResponse & { markdown: string };
 
 export default function HomePage() {
   const navigate = useNavigate();
   const [contentLang, setContentLang] = useState<AppLanguage>("en");
-  const [tab, setTab] = useState<Tab>("text");
-  const [text, setText] = useState("");
   const [url, setUrl] = useState("");
   const [useCache, setUseCache] = useState(true);
+  const [confirmBeforeGen, setConfirmBeforeGen] = useState(loadConfirmBeforeGen);
   const [urlPreview, setUrlPreview] = useState<UrlPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  const [count, setCount] = useState(8);
+  const [count, setCount] = useState(loadQuizCount);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -62,6 +67,13 @@ export default function HomePage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [askOpen, setAskOpen] = useState(false);
   const [askMessages, setAskMessages] = useState<ChatTurn[]>([]);
+  const [info, setInfo] = useState<QuizInfo | null>(null);
+  const [showOptions, setShowOptions] = useState(loadConfirmBeforeGen);
+  const pendingGen = useRef<
+    | { kind: "url" }
+    | { kind: "fork"; sourceId: string; count: number; language: AppLanguage }
+    | null
+  >(null);
 
   useEffect(() => {
     setContentLang(resolveInitialLanguage());
@@ -70,6 +82,20 @@ export default function HomePage() {
   useEffect(() => {
     void refreshHistory();
   }, []);
+
+  useEffect(() => {
+    if (!info) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setInfo(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [info]);
 
   async function refreshHistory() {
     try {
@@ -87,54 +113,157 @@ export default function HomePage() {
     saveLanguage(next);
   }
 
-  async function onFetchPreview() {
-    setError(null);
-    setPreviewing(true);
-    try {
-      const source = await createUrlSource(url.trim(), { useCache });
-      if (!source.markdown) {
-        throw new Error("The page was fetched, but no preview was returned.");
-      }
-      setUrlPreview({ ...source, markdown: source.markdown });
-    } catch (err) {
-      setUrlPreview(null);
-      setError(err instanceof Error ? err.message : "Could not fetch page");
-    } finally {
-      setPreviewing(false);
+  function onCountChange(next: number) {
+    const clamped = clampQuizCount(next);
+    setCount(clamped);
+    saveQuizCount(clamped);
+  }
+
+  function onConfirmBeforeGenChange(next: boolean) {
+    setConfirmBeforeGen(next);
+    saveConfirmBeforeGen(next);
+  }
+
+  async function fetchUrlSource(): Promise<UrlPreview> {
+    const source = await createUrlSource(url.trim(), { useCache });
+    if (!source.markdown) {
+      throw new Error("The page was fetched, but no preview was returned.");
     }
+    const preview = { ...source, markdown: source.markdown };
+    setUrlPreview(preview);
+    return preview;
+  }
+
+  async function generateFromSourceId(
+    sourceId: string,
+    quizCount: number,
+    language: AppLanguage,
+  ) {
+    const created = await createQuiz(sourceId, quizCount, language);
+    const full = await getQuiz(created.quizId);
+    if (!full.questions.length) {
+      throw new Error("No questions were generated.");
+    }
+    const session = createSessionRecord(full, language);
+    await putQuizSession(session);
+    setGenPhase("done");
+    navigate(`/quiz/${full.id}`);
+  }
+
+  async function generateFromSource(source: CreateSourceResponse) {
+    await generateFromSourceId(source.sourceId, count, contentLang);
   }
 
   async function onGenerate() {
-    if (tab === "url" && !urlPreview) {
-      setError("Fetch and preview the page before generating a quiz.");
+    if (url.trim().length < 8) {
+      setError("Enter a page URL.");
       return;
     }
 
     setError(null);
+    pendingGen.current = { kind: "url" };
+
+    if (confirmBeforeGen && !urlPreview) {
+      setPreviewing(true);
+      try {
+        await fetchUrlSource();
+      } catch (err) {
+        setUrlPreview(null);
+        setError(err instanceof Error ? err.message : "Could not fetch page");
+      } finally {
+        setPreviewing(false);
+      }
+      return;
+    }
+
+    setBusy(true);
+    setGenerating(true);
+    setGenPhase(urlPreview ? "writing" : "fetching");
+
+    try {
+      const source = urlPreview ?? (await fetchUrlSource());
+      setGenPhase("writing");
+      await generateFromSource(source);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setGenPhase("writing");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function onCancelGenerate() {
+    setGenerating(false);
+    setGenPhase("idle");
+    pendingGen.current = null;
+  }
+
+  async function onRetryGenerate() {
+    const pending = pendingGen.current;
+    if (pending?.kind === "fork") {
+      await runFork(pending.sourceId, pending.count, pending.language);
+      return;
+    }
+    await onGenerate();
+  }
+
+  async function onOpenInfo(id: string) {
+    setHistoryError(null);
+    try {
+      let session = await getQuizSession(id);
+      if (!session) {
+        setHistoryError("Quiz not found in local history.");
+        return;
+      }
+      if (session.quiz.markdown == null || session.quiz.sourceUrl === undefined) {
+        try {
+          const remote = await getQuiz(id);
+          session = await putQuizSession({
+            ...session,
+            quiz: {
+              ...session.quiz,
+              sourceUrl: remote.sourceUrl,
+              markdown: remote.markdown,
+              truncated: remote.truncated,
+            },
+          });
+        } catch {
+          /* show whatever we already have locally */
+        }
+      }
+      setInfo({
+        title: session.title,
+        sourceId: session.sourceId,
+        sourceUrl: session.quiz.sourceUrl,
+        markdown: session.quiz.markdown,
+        truncated: session.quiz.truncated,
+        questionCount: session.quiz.questions.length,
+        language: session.language,
+        createdAt: session.createdAt,
+      });
+    } catch (err) {
+      setHistoryError(
+        err instanceof Error ? err.message : "Could not open quiz info",
+      );
+    }
+  }
+
+  async function runFork(
+    sourceId: string,
+    quizCount: number,
+    language: AppLanguage,
+  ) {
+    pendingGen.current = { kind: "fork", sourceId, count: quizCount, language };
+    setInfo(null);
+    setError(null);
     setBusy(true);
     setGenerating(true);
     setGenPhase("writing");
-
     try {
-      const source =
-        tab === "text"
-          ? await createTextSource(text)
-          : urlPreview!;
-
-      setGenPhase("writing");
-      const created = await createQuiz(source.sourceId, count, contentLang);
-      const full = await getQuiz(created.quizId);
-      if (!full.questions.length) {
-        throw new Error("No questions were generated.");
-      }
-      const session = createSessionRecord(full, contentLang);
-      await putQuizSession(session);
-      setGenPhase("done");
-      navigate(`/quiz/${full.id}`);
+      await generateFromSourceId(sourceId, quizCount, language);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setGenerating(false);
-      setGenPhase("idle");
+      setError(err instanceof Error ? err.message : "Could not fork quiz");
+      setGenPhase("writing");
     } finally {
       setBusy(false);
     }
@@ -161,14 +290,45 @@ export default function HomePage() {
     }
   }
 
+  const canGenerate = url.trim().length >= 8 && !busy && !previewing;
+
   if (generating) {
     return (
       <div className="app">
         <section className="generating">
           <h1 className="brand">Dropbrain</h1>
-          <p className="tagline">Working on it…</p>
-          <ul className="steps">
-            {tab === "url" && (
+          <p className="tagline">
+            {error ? "Could not finish this quiz" : "Working on it…"}
+          </p>
+          {error ? (
+            <>
+              <p className="error generating-error">{error}</p>
+              <p className="hint">
+                Your page is still here. Try writing questions again — you do
+                not need to fetch the URL over.
+              </p>
+              <div className="generating-actions">
+                <button
+                  type="button"
+                  className="cta btn-with-icon"
+                  disabled={busy}
+                  onClick={() => void onRetryGenerate()}
+                >
+                  <Sparkles size={16} strokeWidth={2} aria-hidden="true" />
+                  Try again
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  disabled={busy}
+                  onClick={onCancelGenerate}
+                >
+                  Back
+                </button>
+              </div>
+            </>
+          ) : (
+            <ul className="steps">
               <li
                 className={
                   genPhase === "fetching"
@@ -179,22 +339,22 @@ export default function HomePage() {
                 }
               >
                 <span className="dot" />
-                Page fetched and previewed
+                Fetching page
               </li>
-            )}
-            <li
-              className={
-                genPhase === "writing"
-                  ? "active"
-                  : genPhase === "done"
-                    ? "done"
-                    : ""
-              }
-            >
-              <span className="dot" />
-              Writing questions
-            </li>
-          </ul>
+              <li
+                className={
+                  genPhase === "writing"
+                    ? "active"
+                    : genPhase === "done"
+                      ? "done"
+                      : ""
+                }
+              >
+                <span className="dot" />
+                Writing questions
+              </li>
+            </ul>
+          )}
         </section>
       </div>
     );
@@ -216,78 +376,125 @@ export default function HomePage() {
 
       <section className="hero">
         <h1 className="brand">Dropbrain</h1>
-        <p className="tagline">Drop anything in, quiz it into memory.</p>
-        <p className="hint">
-          Paste a note or drop a web page into your brain, then lock it in with
-          active-recall multiple choice.
-        </p>
+        <p className="tagline">Drop a page in, quiz it into memory.</p>
 
-        <div className="panel">
-          <div className="tabs" role="tablist" aria-label="Source type">
+        <form
+          className="panel"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onGenerate();
+          }}
+        >
+          <div className="composer">
+            <input
+              className="field url"
+              type="url"
+              value={url}
+              disabled={previewing || busy}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                setUrlPreview(null);
+              }}
+              placeholder="https://example.com/article"
+              aria-label="Page URL"
+            />
             <button
-              type="button"
-              className="tab"
-              role="tab"
-              aria-selected={tab === "text"}
-              onClick={() => setTab("text")}
+              type="submit"
+              className="cta composer-go"
+              disabled={!canGenerate}
+              aria-label={previewing ? "Fetching page" : "Generate quiz"}
             >
-              <FileText size={16} strokeWidth={2} aria-hidden="true" />
-              Paste text
-            </button>
-            <button
-              type="button"
-              className="tab"
-              role="tab"
-              aria-selected={tab === "url"}
-              onClick={() => setTab("url")}
-            >
-              <Link2 size={16} strokeWidth={2} aria-hidden="true" />
-              Web URL
+              {previewing ? (
+                <RefreshCw
+                  className="spin"
+                  size={18}
+                  strokeWidth={2}
+                  aria-hidden="true"
+                />
+              ) : (
+                <Sparkles size={18} strokeWidth={2} aria-hidden="true" />
+              )}
+              <span>{previewing ? "…" : "Gen"}</span>
             </button>
           </div>
 
-          {tab === "text" ? (
-            <textarea
-              className="field"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Paste an article, docs, or study notes…"
-              aria-label="Text to learn"
-            />
-          ) : (
-            <div className="url-fields">
+          <div className="tune-row">
+            <label className="tune-slider">
+              <span className="tune-count">{count}</span>
               <input
-                className="field url"
-                type="url"
-                value={url}
-                disabled={previewing}
-                onChange={(e) => {
-                  setUrl(e.target.value);
-                  setUrlPreview(null);
-                }}
-                placeholder="https://example.com/article"
-                aria-label="Page URL"
+                id="count"
+                className="tune-range"
+                type="range"
+                min={MIN_QUIZ_COUNT}
+                max={MAX_QUIZ_COUNT}
+                step={1}
+                value={count}
+                disabled={previewing || busy}
+                onChange={(e) => onCountChange(Number(e.target.value))}
+                aria-label="Number of questions"
               />
-              <label className="cache-toggle">
+            </label>
+            <div className="lang-switch" role="group" aria-label="Content language">
+              <button
+                type="button"
+                aria-pressed={contentLang === "zh"}
+                disabled={previewing || busy}
+                onClick={() => onContentLanguageChange("zh")}
+              >
+                中
+              </button>
+              <button
+                type="button"
+                aria-pressed={contentLang === "en"}
+                disabled={previewing || busy}
+                onClick={() => onContentLanguageChange("en")}
+              >
+                EN
+              </button>
+            </div>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-pressed={showOptions}
+              aria-label="More options"
+              title="Options"
+              onClick={() => setShowOptions((open) => !open)}
+            >
+              <SlidersHorizontal size={16} strokeWidth={2} aria-hidden="true" />
+            </button>
+          </div>
+
+          {showOptions && (
+            <div className="option-chips">
+              <label className="chip-toggle">
                 <input
                   type="checkbox"
                   checked={useCache}
-                  disabled={previewing}
+                  disabled={previewing || busy}
                   onChange={(e) => {
                     setUseCache(e.target.checked);
                     setUrlPreview(null);
                   }}
                 />
-                <span>Use cached page when available (10 days)</span>
+                Cache
+              </label>
+              <label className="chip-toggle">
+                <input
+                  type="checkbox"
+                  checked={confirmBeforeGen}
+                  disabled={previewing || busy}
+                  onChange={(e) => onConfirmBeforeGenChange(e.target.checked)}
+                />
+                Preview first
               </label>
             </div>
           )}
 
-          {tab === "url" && urlPreview && (
+          {confirmBeforeGen && urlPreview && (
             <section className="source-preview" aria-live="polite">
               <div className="source-preview-head">
                 <div>
-                  <p className="source-preview-kicker">Page ready</p>
+                  <p className="source-preview-kicker">Preview ready</p>
                   <h2>{urlPreview.title}</h2>
                 </div>
                 <span className="source-preview-badge">
@@ -304,93 +511,26 @@ export default function HomePage() {
             </section>
           )}
 
-          <div className="controls">
-            <div className="control">
-              <label htmlFor="count">Questions</label>
-              <select
-                id="count"
-                value={count}
-                onChange={(e) => setCount(Number(e.target.value))}
-              >
-                {[5, 6, 7, 8, 9, 10].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="control">
-              <label htmlFor="content-lang">Content language</label>
-              <select
-                id="content-lang"
-                value={contentLang}
-                onChange={(e) =>
-                  onContentLanguageChange(e.target.value as AppLanguage)
-                }
-              >
-                <option value="zh">{contentLanguageLabel("zh")}</option>
-                <option value="en">{contentLanguageLabel("en")}</option>
-              </select>
-            </div>
-            {tab === "url" && (
-              <button
-                type="button"
-                className="ghost btn-with-icon"
-                disabled={busy || previewing || url.trim().length < 8}
-                onClick={() => void onFetchPreview()}
-              >
-                {previewing ? (
-                  <RefreshCw
-                    className="spin"
-                    size={16}
-                    strokeWidth={2}
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <Eye size={16} strokeWidth={2} aria-hidden="true" />
-                )}
-                {previewing
-                  ? "Fetching page…"
-                  : urlPreview
-                    ? "Fetch again"
-                    : "Fetch & preview"}
-              </button>
-            )}
-            <button
-              type="button"
-              className="cta btn-with-icon"
-              disabled={
-                busy ||
-                previewing ||
-                (tab === "text"
-                  ? text.trim().length < 40
-                  : urlPreview === null)
-              }
-              onClick={() => void onGenerate()}
-            >
-              <Sparkles size={16} strokeWidth={2} aria-hidden="true" />
-              Generate quiz
-            </button>
-          </div>
           {error && <p className="error">{error}</p>}
-        </div>
+        </form>
       </section>
 
       <section className="history" aria-label="Quiz history">
         <div className="history-head">
-          <h2>Recent quizzes</h2>
+          <h2>Recent</h2>
           <button
             type="button"
-            className="ghost history-refresh btn-with-icon"
+            className="ghost icon-btn"
+            aria-label="Refresh history"
+            title="Refresh"
             onClick={() => void refreshHistory()}
           >
             <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
-            Refresh
           </button>
         </div>
         {historyError && <p className="error">{historyError}</p>}
         {history.length === 0 ? (
-          <p className="muted">No saved quizzes yet — generate one above.</p>
+          <p className="muted">Nothing yet.</p>
         ) : (
           <ul className="history-list">
             {history.map((item) => (
@@ -404,21 +544,30 @@ export default function HomePage() {
                 <div className="history-actions">
                   <button
                     type="button"
-                    className="ghost history-action btn-with-icon"
-                    aria-label={`Export ${item.title}`}
-                    onClick={() => void onExport(item.id)}
+                    className="ghost icon-btn"
+                    aria-label={`Quiz info for ${item.title}`}
+                    title="Info"
+                    onClick={() => void onOpenInfo(item.id)}
                   >
-                    <Download size={15} strokeWidth={2} aria-hidden="true" />
-                    Export
+                    <Info size={16} strokeWidth={2} aria-hidden="true" />
                   </button>
                   <button
                     type="button"
-                    className="ghost history-action btn-with-icon"
+                    className="ghost icon-btn"
+                    aria-label={`Export ${item.title}`}
+                    title="Export"
+                    onClick={() => void onExport(item.id)}
+                  >
+                    <Download size={16} strokeWidth={2} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost icon-btn"
                     aria-label={`Delete ${item.title}`}
+                    title="Delete"
                     onClick={() => void onDelete(item.id)}
                   >
-                    <Trash2 size={15} strokeWidth={2} aria-hidden="true" />
-                    Delete
+                    <Trash2 size={16} strokeWidth={2} aria-hidden="true" />
                   </button>
                 </div>
               </li>
@@ -426,6 +575,27 @@ export default function HomePage() {
           </ul>
         )}
       </section>
+
+      {info && (
+        <>
+          <button
+            type="button"
+            className="info-modal-backdrop open"
+            aria-label="Close quiz info"
+            onClick={() => setInfo(null)}
+          />
+          <div className="info-modal">
+            <QuizInfoCard
+              info={info}
+              busy={busy}
+              onClose={() => setInfo(null)}
+              onFork={(quizCount, language) =>
+                void runFork(info.sourceId, quizCount, language)
+              }
+            />
+          </div>
+        </>
+      )}
 
       <ChatSidebar
         open={askOpen}

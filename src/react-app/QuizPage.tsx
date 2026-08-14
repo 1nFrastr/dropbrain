@@ -30,6 +30,10 @@ import { useOnlineStatus } from "./useOnlineStatus";
 
 const LETTERS = ["A", "B", "C", "D"] as const;
 
+function needsSourceHydration(session: QuizSessionRecord): boolean {
+  return session.quiz.markdown == null || session.quiz.sourceUrl === undefined;
+}
+
 export default function QuizPage() {
   const { quizId = "" } = useParams();
   const navigate = useNavigate();
@@ -53,11 +57,18 @@ export default function QuizPage() {
         const local = await getQuizSession(quizId);
         if (local) {
           let next = local;
-          if (!hasCompleteAnswerKey(local)) {
+          if (!hasCompleteAnswerKey(local) || needsSourceHydration(local)) {
             try {
               const remote = await getQuiz(quizId);
               next = await putQuizSession({
                 ...local,
+                quiz: {
+                  ...local.quiz,
+                  title: remote.title,
+                  sourceUrl: remote.sourceUrl,
+                  markdown: remote.markdown,
+                  truncated: remote.truncated,
+                },
                 answerKey: {
                   ...local.answerKey,
                   ...toAnswerKeyMap(remote.answerKey),

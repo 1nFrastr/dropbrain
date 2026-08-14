@@ -124,8 +124,8 @@ describe("validateQuestions", () => {
         {
           questions: [
             { ...good, options: ["a", "b"] },
-            good,
-            good,
+            { ...good, options: ["a", "b"] },
+            { ...good, options: ["a", "b"] },
           ],
         },
         3,
@@ -135,5 +135,74 @@ describe("validateQuestions", () => {
 
   it("rejects missing questions", () => {
     expect(() => validateQuestions({}, 5)).toThrow(/missing questions/i);
+  });
+
+  it("rejects empty option strings from degenerate JSON", () => {
+    const junk = {
+      stem: "Kubernetes",
+      options: ["", "", "", ""],
+      correctIndex: 0,
+      explanation: "Kubernetes",
+      tags: ["Kubernetes"],
+    };
+    expect(() =>
+      validateQuestions({ ok: true, questions: [junk, junk, junk] }, 3),
+    ).toThrow(/usable questions|complete question|non-empty/i);
+  });
+
+  it("skips junk items when enough valid questions remain", () => {
+    const junk = {
+      stem: "Kubernetes",
+      options: ["", "", "", ""],
+      correctIndex: 0,
+      explanation: "Kubernetes",
+      tags: ["Kubernetes"],
+    };
+    const out = validateQuestions(
+      { questions: [junk, good, junk, good, good] },
+      3,
+    );
+    expect(out).toHaveLength(3);
+    expect(out[0]?.stem).toBe(good.stem);
+  });
+
+  it("rejects topic-title stems even when options are filled", () => {
+    const title = {
+      stem: "Kubernetes",
+      options: ["Linux", "macOS", "Windows", "Solaris"],
+      correctIndex: 0,
+      explanation: "Minikube is available for Linux, macOS, and Windows.",
+      tags: ["Minikube"],
+    };
+    expect(() =>
+      validateQuestions({ questions: [title, title, title] }, 3),
+    ).toThrow(/complete question/i);
+  });
+
+  it("rejects A/B/C/D placeholder option text", () => {
+    expect(() =>
+      validateQuestions(
+        {
+          questions: [
+            { ...good, options: ["A", "B", "C", "D"] },
+            { ...good, options: ["A", "B", "C", "D"] },
+            { ...good, options: ["A", "B", "C", "D"] },
+          ],
+        },
+        3,
+      ),
+    ).toThrow(/placeholder letters/i);
+  });
+
+  it("accepts short Chinese stems that are real questions", () => {
+    const zh = {
+      stem: "部署控制器的作用是什么",
+      options: ["创建服务", "管理配置映射", "创建ReplicaSets", "调度Pod"],
+      correctIndex: 2,
+      explanation: "材料写明 Deployment 控制器通过创建 ReplicaSet 来管理 Pod。",
+      tags: ["Deployment"],
+    };
+    const out = validateQuestions({ questions: [zh, zh, zh] }, 3);
+    expect(out).toHaveLength(3);
   });
 });
