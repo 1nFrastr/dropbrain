@@ -2,7 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, Copy, SendHorizontal, X } from "lucide-react";
 import type { ChatTurn } from "./api";
 import ChatMarkdown from "./ChatMarkdown";
-import { isNearBottom, pinToBottom, shouldSendOnEnter } from "./chatComposer";
+import {
+  isNearBottom,
+  pinToBottom,
+  shouldAutofocusChatComposer,
+  shouldSendOnEnter,
+} from "./chatComposer";
+import { copyText, shouldCopyOnPointerDown } from "./copyText";
 import { stabilizeStreamingMarkdown } from "./streamMarkdown";
 
 export type ChatStreamFn = (
@@ -49,6 +55,7 @@ export default function ChatSidebar({
   const [streamingText, setStreamingText] = useState("");
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyFromPointerRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -74,6 +81,9 @@ export default function ChatSidebar({
   useEffect(() => {
     if (!open) return;
     stickToBottomRef.current = true;
+    if (!shouldAutofocusChatComposer(window.matchMedia("(pointer: coarse)"))) {
+      return;
+    }
     const id = window.setTimeout(() => inputRef.current?.focus(), 180);
     return () => window.clearTimeout(id);
   }, [open, threadKey]);
@@ -117,8 +127,9 @@ export default function ChatSidebar({
 
   async function copyAssistantMessage(index: number, text: string) {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
       setCopiedIndex(index);
+      setError(null);
       if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
       copiedTimerRef.current = setTimeout(() => setCopiedIndex(null), 1500);
     } catch {
@@ -321,7 +332,19 @@ export default function ChatSidebar({
                         type="button"
                         className="chat-copy"
                         aria-label={copied ? "Copied" : "Copy reply"}
-                        onClick={() => void copyAssistantMessage(i, m.content)}
+                        onPointerDown={(e) => {
+                          if (!shouldCopyOnPointerDown(e)) return;
+                          e.preventDefault();
+                          copyFromPointerRef.current = true;
+                          void copyAssistantMessage(i, m.content);
+                        }}
+                        onClick={() => {
+                          if (copyFromPointerRef.current) {
+                            copyFromPointerRef.current = false;
+                            return;
+                          }
+                          void copyAssistantMessage(i, m.content);
+                        }}
                       >
                         {copied ? <Check size={14} /> : <Copy size={14} />}
                       </button>
