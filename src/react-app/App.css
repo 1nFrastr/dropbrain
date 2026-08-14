@@ -15,20 +15,38 @@
   letter-spacing: -0.03em;
   line-height: 0.95;
   margin: 0;
+  text-align: center;
 }
 
-.github-corner {
-  position: fixed;
-  top: max(1rem, env(safe-area-inset-top));
-  right: max(1rem, env(safe-area-inset-right));
-  z-index: 30;
+.hero-lead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+  margin-top: 0.9rem;
+}
+
+.hero-lead .tagline {
+  margin: 0;
+}
+
+.github-link {
+  display: inline-flex;
+  color: var(--ink-soft);
+  line-height: 0;
+}
+
+.github-link:hover {
+  color: var(--accent);
 }
 
 .tagline {
-  margin: 0.9rem 0 0;
+  margin: 0.9rem auto 0;
   font-size: 1.15rem;
   color: var(--ink-soft);
-  max-width: 28ch;
+  max-width: 32ch;
+  text-align: center;
   animation: rise 0.8s ease 0.08s both;
 }
 
@@ -76,7 +94,7 @@
 }
 
 .panel {
-  margin-top: 1.5rem;
+  margin-top: clamp(2.25rem, 5.5vw, 3.5rem);
   animation: rise 0.75s ease 0.14s both;
 }
 
@@ -89,7 +107,8 @@
 .composer .field.url {
   flex: 1;
   min-width: 0;
-  padding: 0.85rem 1rem;
+  padding: 1.05rem 1.2rem;
+  font-size: 1.05rem;
 }
 
 .composer-go {
@@ -109,6 +128,10 @@
   flex-wrap: wrap;
   gap: 0.65rem;
   margin-top: 0.85rem;
+}
+
+.tune-block {
+  position: relative;
 }
 
 .tune-slider {
@@ -268,10 +291,14 @@
 }
 
 .option-chips {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 0.45rem);
+  z-index: 6;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  margin: 0;
 }
 
 .chip-toggle {
@@ -869,7 +896,7 @@ a.ghost {
 }
 
 .history {
-  margin-top: 2.75rem;
+  margin-top: 2.5rem;
   animation: rise 0.7s ease 0.2s both;
 }
 
