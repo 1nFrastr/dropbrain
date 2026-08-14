@@ -318,15 +318,13 @@ export default function QuizPage() {
     <div className={`app${chatOpen ? " chat-open" : ""}`}>
       <section>
         <div className="quiz-meta">
-          <div className="quiz-meta-main">
-            <Link className="quiz-home-link btn-with-icon" to="/">
-              <House size={15} strokeWidth={2} aria-hidden="true" />
-              Home
-            </Link>
-            <span className="quiz-source-title">{quiz.title}</span>
-          </div>
+          <Link className="quiz-home-link btn-with-icon" to="/">
+            <House size={15} strokeWidth={2} aria-hidden="true" />
+            Home
+          </Link>
           <span className="quiz-progress">{progressLabel}</span>
         </div>
+        <p className="quiz-source-title">{quiz.title}</p>
         <h2 className="stem">{current.stem}</h2>
         <div className="options" role="listbox" aria-label="Answer choices">
           {current.options.map((opt, i) => {
@@ -347,7 +345,8 @@ export default function QuizPage() {
                 disabled={revealed || busy}
                 onClick={() => void checkAnswer(i)}
               >
-                <strong>{LETTERS[i]}.</strong> {opt}
+                <span className="option-key">{LETTERS[i]}</span>
+                <span className="option-text">{opt}</span>
               </button>
             );
           })}

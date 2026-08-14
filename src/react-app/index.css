@@ -89,17 +89,24 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 html,
 body,
 #root {
   min-height: 100%;
+  max-width: 100%;
 }
 
 body {
   margin: 0;
   min-width: 320px;
+  width: 100%;
+  overscroll-behavior-x: none;
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
   background:
@@ -107,12 +114,6 @@ body {
     radial-gradient(900px 420px at 100% 0%, var(--body-spot-2), transparent 50%),
     linear-gradient(180deg, var(--body-top) 0%, var(--paper) 40%, var(--body-bottom) 100%);
   background-attachment: fixed;
-}
-
-@media (max-width: 640px) {
-  body {
-    background-attachment: scroll;
-  }
 }
 
 button,
@@ -130,6 +131,27 @@ input,
 select,
 textarea {
   touch-action: manipulation;
+}
+
+@media (max-width: 640px) {
+  html,
+  body {
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
+  }
+
+  body {
+    min-width: 0;
+    width: 100%;
+    background-attachment: scroll;
+  }
+
+  input,
+  textarea,
+  select {
+    touch-action: pan-y;
+    font-size: 16px;
+  }
 }
 
 button {
