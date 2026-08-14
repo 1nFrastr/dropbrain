@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isNearBottom, pinToBottom, shouldSendOnEnter } from "./chatComposer";
+import {
+  isNearBottom,
+  pinToBottom,
+  shouldAutofocusChatComposer,
+  shouldSendOnEnter,
+} from "./chatComposer";
 
 describe("shouldSendOnEnter", () => {
   it("sends on plain Enter", () => {
@@ -65,5 +70,15 @@ describe("pinToBottom", () => {
     const el = { scrollHeight: 500, scrollTop: 400, clientHeight: 100 };
     pinToBottom(el);
     expect(el.scrollTop).toBe(400);
+  });
+});
+
+describe("shouldAutofocusChatComposer", () => {
+  it("autofocuses on fine pointers", () => {
+    expect(shouldAutofocusChatComposer({ matches: false })).toBe(true);
+  });
+
+  it("skips autofocus on coarse pointers so the keyboard does not steal taps", () => {
+    expect(shouldAutofocusChatComposer({ matches: true })).toBe(false);
   });
 });

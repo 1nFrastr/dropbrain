@@ -29,3 +29,13 @@ export function pinToBottom(
   if (el.scrollTop >= maxScroll - 1) return;
   el.scrollTop = maxScroll;
 }
+
+/**
+ * Skip autofocus on coarse pointers so the mobile keyboard does not open
+ * and steal the first tap on action buttons (copy, suggestions, close).
+ */
+export function shouldAutofocusChatComposer(
+  query: Pick<MediaQueryList, "matches">,
+): boolean {
+  return !query.matches;
+}
