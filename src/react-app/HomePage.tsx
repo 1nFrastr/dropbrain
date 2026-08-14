@@ -23,8 +23,6 @@ import {
   clampQuizCount,
   loadConfirmBeforeGen,
   loadQuizCount,
-  MAX_QUIZ_COUNT,
-  MIN_QUIZ_COUNT,
   saveConfirmBeforeGen,
   saveQuizCount,
 } from "./homePrefs";
@@ -45,6 +43,7 @@ import {
   putQuizSession,
   type QuizHistoryItem,
 } from "./historyStore";
+import QuizCountControl from "./QuizCountControl";
 import QuizInfoCard, { type QuizInfo } from "./QuizInfoCard";
 
 type GenPhase = "idle" | "fetching" | "writing" | "done";
@@ -419,21 +418,16 @@ export default function HomePage() {
           </div>
 
           <div className="tune-row">
-            <label className="tune-slider">
-              <span className="tune-count">{count}</span>
-              <input
-                id="count"
-                className="tune-range"
-                type="range"
-                min={MIN_QUIZ_COUNT}
-                max={MAX_QUIZ_COUNT}
-                step={1}
-                value={count}
-                disabled={previewing || busy}
-                onChange={(e) => onCountChange(Number(e.target.value))}
-                aria-label="Number of questions"
-              />
-            </label>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-pressed={showOptions}
+              aria-label="More options"
+              title="Options"
+              onClick={() => setShowOptions((open) => !open)}
+            >
+              <SlidersHorizontal size={16} strokeWidth={2} aria-hidden="true" />
+            </button>
             <div className="lang-switch" role="group" aria-label="Content language">
               <button
                 type="button"
@@ -452,16 +446,12 @@ export default function HomePage() {
                 EN
               </button>
             </div>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-pressed={showOptions}
-              aria-label="More options"
-              title="Options"
-              onClick={() => setShowOptions((open) => !open)}
-            >
-              <SlidersHorizontal size={16} strokeWidth={2} aria-hidden="true" />
-            </button>
+            <QuizCountControl
+              id="count"
+              value={count}
+              disabled={previewing || busy}
+              onChange={onCountChange}
+            />
           </div>
 
           {showOptions && (

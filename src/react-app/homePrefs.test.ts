@@ -31,11 +31,11 @@ afterEach(() => {
 });
 
 describe("clampQuizCount", () => {
-  it("keeps values in 5..10", () => {
-    expect(clampQuizCount(5)).toBe(5);
-    expect(clampQuizCount(10)).toBe(10);
-    expect(clampQuizCount(3)).toBe(5);
-    expect(clampQuizCount(12)).toBe(10);
+  it("keeps values in 3..20", () => {
+    expect(clampQuizCount(3)).toBe(3);
+    expect(clampQuizCount(20)).toBe(20);
+    expect(clampQuizCount(2)).toBe(3);
+    expect(clampQuizCount(21)).toBe(20);
     expect(clampQuizCount("8")).toBe(8);
     expect(clampQuizCount("nope")).toBe(8);
   });

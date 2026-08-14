@@ -4,10 +4,9 @@ import ChatMarkdown from "./ChatMarkdown";
 import {
   clampQuizCount,
   loadQuizCount,
-  MAX_QUIZ_COUNT,
-  MIN_QUIZ_COUNT,
   saveQuizCount,
 } from "./homePrefs";
+import QuizCountControl from "./QuizCountControl";
 import {
   contentLanguageLabel,
   saveLanguage,
@@ -136,23 +135,6 @@ export default function QuizInfoCard({ info, busy = false, onClose, onFork }: Pr
         <div className="quiz-info-fork">
           <p className="quiz-info-fork-kicker">New quiz from this page</p>
           <div className="tune-row">
-            <label className="tune-slider">
-              <span className="tune-count">{forkCount}</span>
-              <input
-                id="fork-count"
-                className="tune-range"
-                type="range"
-                min={MIN_QUIZ_COUNT}
-                max={MAX_QUIZ_COUNT}
-                step={1}
-                value={forkCount}
-                disabled={busy}
-                onChange={(e) =>
-                  setForkCount(clampQuizCount(Number(e.target.value)))
-                }
-                aria-label="Number of questions"
-              />
-            </label>
             <div className="lang-switch" role="group" aria-label="Content language">
               <button
                 type="button"
@@ -171,6 +153,12 @@ export default function QuizInfoCard({ info, busy = false, onClose, onFork }: Pr
                 EN
               </button>
             </div>
+            <QuizCountControl
+              id="fork-count"
+              value={forkCount}
+              disabled={busy}
+              onChange={setForkCount}
+            />
           </div>
           <div className="generating-actions">
             <button
