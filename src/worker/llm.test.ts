@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  extractWorkersAiSseDeltas,
-  extractWorkersAiText,
+  extractOpenAiSseDeltas,
   normalizeLanguage,
   sseEncode,
   UnusableMaterialError,
@@ -10,7 +9,7 @@ import {
 
 function collectDeltas(text: string, carry = "") {
   const deltas: string[] = [];
-  const iter = extractWorkersAiSseDeltas(text, carry);
+  const iter = extractOpenAiSseDeltas(text, carry);
   let next = iter.next();
   while (!next.done) {
     deltas.push(next.value);
@@ -39,44 +38,26 @@ describe("sseEncode", () => {
   });
 });
 
-describe("extractWorkersAiSseDeltas", () => {
-  it("yields response deltas across chunk boundaries", () => {
-    const first = collectDeltas('data: {"response":"你"}\n\ndata: {"res');
+describe("extractOpenAiSseDeltas", () => {
+  it("yields content deltas across chunk boundaries", () => {
+    const first = collectDeltas(
+      'data: {"choices":[{"delta":{"content":"你"}}]}\n\ndata: {"cho',
+    );
     expect(first.deltas).toEqual(["你"]);
 
-    const second = collectDeltas('ponse":"好"}\n\ndata: [DONE]\n\n', first.carry);
+    const second = collectDeltas(
+      'ices":[{"delta":{"content":"好"}}]}\n\ndata: [DONE]\n\n',
+      first.carry,
+    );
     expect(second.deltas).toEqual(["好"]);
   });
-});
 
-describe("extractWorkersAiText", () => {
-  it("accepts legacy string / response string shapes", () => {
-    expect(extractWorkersAiText("hello")).toBe("hello");
-    expect(extractWorkersAiText({ response: "hello" })).toBe("hello");
-  });
-
-  it("reads OpenAI-compatible choices[].message.content", () => {
-    expect(
-      extractWorkersAiText({
-        choices: [{ message: { content: '{"ok":true}' } }],
-        response: { ok: true },
-      }),
-    ).toBe('{"ok":true}');
-  });
-
-  it("stringifies auto-parsed JSON response objects", () => {
-    expect(extractWorkersAiText({ response: { ok: true, n: 1 } })).toBe(
-      '{"ok":true,"n":1}',
+  it("ignores reasoning_content so thinking tokens do not appear as chat text", () => {
+    const { deltas } = collectDeltas(
+      'data: {"choices":[{"delta":{"reasoning_content":"hmm"}}]}\n\n' +
+        'data: {"choices":[{"delta":{"content":"答案"}}]}\n\n',
     );
-  });
-
-  it("unwraps REST { result } envelopes", () => {
-    expect(
-      extractWorkersAiText({
-        success: true,
-        result: { response: { ok: true } },
-      }),
-    ).toBe('{"ok":true}');
+    expect(deltas).toEqual(["答案"]);
   });
 });
 

@@ -21,13 +21,7 @@
       "migrations_dir": "migrations"
     }
   ],
-  "ai": {
-    "binding": "AI",
-    "remote": true
-  },
   "vars": {
-    "CF_ACCOUNT_ID": "e633e1160d51838a3448ec7ae59f3f00",
-    "AI_GATEWAY_ID": "default",
-    "OPENAI_MODEL": "gpt-4o-mini"
+    "DEEPSEEK_MODEL": "deepseek-chat"
   }
 }

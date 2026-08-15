@@ -92,7 +92,7 @@ if (warm.ok) {
 
 const sourceId = cold.result.sourceId;
 const quiz = await timed(
-  "POST /api/quizzes (count:5) — Workers AI generate",
+  "POST /api/quizzes (count:5) — DeepSeek generate",
   () =>
     api("/api/quizzes", {
       method: "POST",

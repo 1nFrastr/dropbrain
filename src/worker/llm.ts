@@ -242,37 +242,53 @@ export type ChatMessage = {
   content: string;
 };
 
-function useOpenAi(env: Env): boolean {
-  return Boolean(env.OPENAI_API_KEY?.trim() && env.CF_ACCOUNT_ID?.trim());
+const DEEPSEEK_API_BASE = "https://api.deepseek.com";
+
+function deepSeekAuth(env: Env): { apiKey: string; model: string } {
+  const apiKey = env.DEEPSEEK_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("DEEPSEEK_API_KEY is not configured.");
+  }
+  return {
+    apiKey,
+    model: env.DEEPSEEK_MODEL?.trim() || "deepseek-chat",
+  };
 }
 
-async function callOpenAiCompatible(
+function deepSeekBody(
+  model: string,
+  messages: ChatMessage[],
+  options?: { json?: boolean; temperature?: number; stream?: boolean },
+) {
+  return {
+    model,
+    temperature: options?.temperature ?? 0.4,
+    // V4 thinks by default; skip CoT so chat tokens start immediately.
+    thinking: { type: "disabled" },
+    ...(options?.stream ? { stream: true } : {}),
+    ...(options?.json ? { response_format: { type: "json_object" } } : {}),
+    messages,
+  };
+}
+
+async function callDeepSeek(
   env: Env,
   messages: ChatMessage[],
   options?: { json?: boolean; temperature?: number },
 ): Promise<string> {
-  const accountId = env.CF_ACCOUNT_ID!.trim();
-  const gatewayId = (env.AI_GATEWAY_ID || "default").trim();
-  const apiKey = env.OPENAI_API_KEY!.trim();
-
-  const base = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/openai`;
-  const res = await fetch(`${base}/chat/completions`, {
+  const { apiKey, model } = deepSeekAuth(env);
+  const res = await fetch(`${DEEPSEEK_API_BASE}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: env.OPENAI_MODEL || "gpt-4o-mini",
-      temperature: options?.temperature ?? 0.4,
-      ...(options?.json ? { response_format: { type: "json_object" } } : {}),
-      messages,
-    }),
+    body: JSON.stringify(deepSeekBody(model, messages, options)),
   });
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`AI Gateway error ${res.status}: ${body.slice(0, 300)}`);
+    throw new Error(`DeepSeek error ${res.status}: ${body.slice(0, 300)}`);
   }
 
   const data = (await res.json()) as {
@@ -280,171 +296,13 @@ async function callOpenAiCompatible(
   };
   const content = data.choices?.[0]?.message?.content;
   if (!content) {
-    throw new Error("Empty completion from AI Gateway.");
+    throw new Error("Empty completion from DeepSeek.");
   }
   return content;
 }
 
-async function* streamOpenAiCompatible(
-  env: Env,
-  messages: ChatMessage[],
-  options?: { temperature?: number },
-): AsyncGenerator<string> {
-  const accountId = env.CF_ACCOUNT_ID!.trim();
-  const gatewayId = (env.AI_GATEWAY_ID || "default").trim();
-  const apiKey = env.OPENAI_API_KEY!.trim();
-
-  const base = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/openai`;
-  const res = await fetch(`${base}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: env.OPENAI_MODEL || "gpt-4o-mini",
-      temperature: options?.temperature ?? 0.5,
-      stream: true,
-      messages,
-    }),
-  });
-
-  if (!res.ok || !res.body) {
-    const body = await res.text();
-    throw new Error(`AI Gateway error ${res.status}: ${body.slice(0, 300)}`);
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line.startsWith("data:")) continue;
-      const data = line.slice(5).trim();
-      if (!data || data === "[DONE]") continue;
-      try {
-        const parsed = JSON.parse(data) as {
-          choices?: Array<{ delta?: { content?: string } }>;
-        };
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) yield delta;
-      } catch {
-        /* skip malformed chunk */
-      }
-    }
-  }
-}
-
-/**
- * Normalize Workers AI sync outputs.
- * Newer Llama responses use OpenAI chat.completion shape; when the model
- * emits JSON, `response` may already be a parsed object while
- * `choices[0].message.content` remains the string form.
- */
-export function extractWorkersAiText(result: unknown): string {
-  if (typeof result === "string") {
-    if (!result) throw new Error("Empty completion from Workers AI.");
-    return result;
-  }
-
-  // AI binding may return a fetch Response in some runtimes.
-  if (isResponseLike(result)) {
-    throw new Error(
-      "Unexpected Workers AI response. got Response (use stream or await body)",
-    );
-  }
-
-  if (!result || typeof result !== "object") {
-    throw new Error(
-      `Unexpected Workers AI response. type=${typeof result}`,
-    );
-  }
-
-  // REST-style wrapper: { success, result: {...} }
-  let row = result as Record<string, unknown>;
-  if (
-    row.result &&
-    typeof row.result === "object" &&
-    ("response" in (row.result as object) ||
-      "choices" in (row.result as object))
-  ) {
-    row = row.result as Record<string, unknown>;
-  }
-
-  const choices = row.choices;
-  if (Array.isArray(choices) && choices.length > 0) {
-    const first = choices[0];
-    if (first && typeof first === "object") {
-      const message = (first as { message?: { content?: unknown } }).message;
-      const content = message?.content;
-      if (typeof content === "string" && content) return content;
-      // Some gateways put structured JSON directly in content
-      if (content && typeof content === "object") {
-        return JSON.stringify(content);
-      }
-    }
-  }
-
-  if ("response" in row) {
-    const response = row.response;
-    if (typeof response === "string") {
-      if (!response) throw new Error("Empty completion from Workers AI.");
-      return response;
-    }
-    // Auto-parsed JSON / structured output
-    if (response && typeof response === "object") {
-      return JSON.stringify(response);
-    }
-  }
-
-  if (typeof row.text === "string" && row.text) {
-    return row.text;
-  }
-
-  // ReadableStream / async iterable mistakenly returned for non-stream calls
-  if (isReadableStream(result) || Symbol.asyncIterator in Object(result)) {
-    throw new Error(
-      "Unexpected Workers AI response. got stream for non-stream call",
-    );
-  }
-
-  const keys = Object.keys(row).slice(0, 12).join(",");
-  throw new Error(
-    `Unexpected Workers AI response. type=object keys=${keys || "(none)"}`,
-  );
-}
-
-function isResponseLike(value: unknown): value is Response {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as Response).arrayBuffer === "function" &&
-    typeof (value as Response).text === "function" &&
-    typeof (value as Response).status === "number"
-  );
-}
-
-async function callWorkersAi(
-  env: Env,
-  messages: ChatMessage[],
-): Promise<string> {
-  const result = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
-    messages,
-    max_tokens: 4096,
-  });
-  return extractWorkersAiText(result);
-}
-
-/** Parse Workers AI SSE chunks: `data: {"response":"..."}\n\n` / `data: [DONE]`. */
-export function* extractWorkersAiSseDeltas(
+/** Parse OpenAI-compatible SSE chunks: `data: {"choices":[{"delta":{"content":"..."}}]}\n\n`. */
+export function* extractOpenAiSseDeltas(
   chunkText: string,
   carry = "",
 ): Generator<string, string> {
@@ -459,26 +317,44 @@ export function* extractWorkersAiSseDeltas(
     if (!data || data === "[DONE]") continue;
     try {
       const parsed = JSON.parse(data) as {
-        response?: unknown;
-        text?: unknown;
+        choices?: Array<{ delta?: { content?: string } }>;
       };
-      if (typeof parsed.response === "string" && parsed.response) {
-        yield parsed.response;
-      } else if (typeof parsed.text === "string" && parsed.text) {
-        yield parsed.text;
-      }
+      const delta = parsed.choices?.[0]?.delta?.content;
+      if (delta) yield delta;
     } catch {
-      /* skip malformed */
+      /* skip malformed chunk */
     }
   }
 
   return rest;
 }
 
-async function* streamReadableSse(
-  stream: ReadableStream<Uint8Array>,
+async function* streamDeepSeek(
+  env: Env,
+  messages: ChatMessage[],
+  options?: { temperature?: number },
 ): AsyncGenerator<string> {
-  const reader = stream.getReader();
+  const { apiKey, model } = deepSeekAuth(env);
+  const res = await fetch(`${DEEPSEEK_API_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(
+      deepSeekBody(model, messages, {
+        stream: true,
+        temperature: options?.temperature ?? 0.5,
+      }),
+    ),
+  });
+
+  if (!res.ok || !res.body) {
+    const body = await res.text();
+    throw new Error(`DeepSeek error ${res.status}: ${body.slice(0, 300)}`);
+  }
+
+  const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let carry = "";
 
@@ -487,7 +363,7 @@ async function* streamReadableSse(
       const { done, value } = await reader.read();
       if (done) break;
       const text = decoder.decode(value, { stream: true });
-      const iter = extractWorkersAiSseDeltas(text, carry);
+      const iter = extractOpenAiSseDeltas(text, carry);
       let next = iter.next();
       while (!next.done) {
         yield next.value;
@@ -496,7 +372,7 @@ async function* streamReadableSse(
       carry = next.value;
     }
     if (carry.trim()) {
-      const iter = extractWorkersAiSseDeltas("\n", carry);
+      const iter = extractOpenAiSseDeltas("\n", carry);
       let next = iter.next();
       while (!next.done) {
         yield next.value;
@@ -508,77 +384,12 @@ async function* streamReadableSse(
   }
 }
 
-function isReadableStream(value: unknown): value is ReadableStream<Uint8Array> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as ReadableStream<Uint8Array>).getReader === "function"
-  );
-}
-
-async function* streamWorkersAi(
-  env: Env,
-  messages: ChatMessage[],
-): AsyncGenerator<string> {
-  const result = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
-    messages,
-    max_tokens: 4096,
-    stream: true,
-  });
-
-  if (isReadableStream(result)) {
-    let produced = false;
-    for await (const delta of streamReadableSse(result)) {
-      produced = true;
-      yield delta;
-    }
-    if (produced) return;
-  } else if (
-    result &&
-    typeof result === "object" &&
-    Symbol.asyncIterator in result
-  ) {
-    let produced = false;
-    for await (const chunk of result as AsyncIterable<unknown>) {
-      if (typeof chunk === "string" && chunk) {
-        produced = true;
-        yield chunk;
-        continue;
-      }
-      if (chunk && typeof chunk === "object") {
-        const row = chunk as { response?: unknown; text?: unknown };
-        if (typeof row.response === "string" && row.response) {
-          produced = true;
-          yield row.response;
-        } else if (typeof row.text === "string" && row.text) {
-          produced = true;
-          yield row.text;
-        }
-      }
-    }
-    if (produced) return;
-  }
-
-  // Fallback: non-streamed response chunked for UI feel
-  const full = await callWorkersAi(env, messages);
-  if (!full) {
-    throw new Error("Empty completion from Workers AI.");
-  }
-  const size = 24;
-  for (let i = 0; i < full.length; i += size) {
-    yield full.slice(i, i + size);
-  }
-}
-
 async function completeChat(
   env: Env,
   messages: ChatMessage[],
   options?: { json?: boolean; temperature?: number },
 ): Promise<string> {
-  if (useOpenAi(env)) {
-    return callOpenAiCompatible(env, messages, options);
-  }
-  return callWorkersAi(env, messages);
+  return callDeepSeek(env, messages, options);
 }
 
 async function* streamChat(
@@ -586,11 +397,7 @@ async function* streamChat(
   messages: ChatMessage[],
   options?: { temperature?: number },
 ): AsyncGenerator<string> {
-  if (useOpenAi(env)) {
-    yield* streamOpenAiCompatible(env, messages, options);
-    return;
-  }
-  yield* streamWorkersAi(env, messages);
+  yield* streamDeepSeek(env, messages, options);
 }
 
 const MCQ_REPAIR_HINT =
