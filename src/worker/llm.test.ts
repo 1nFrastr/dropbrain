@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  coalesceSseDeltas,
   extractOpenAiSseDeltas,
   normalizeLanguage,
   sseEncode,
@@ -58,6 +59,58 @@ describe("extractOpenAiSseDeltas", () => {
         'data: {"choices":[{"delta":{"content":"答案"}}]}\n\n',
     );
     expect(deltas).toEqual(["答案"]);
+  });
+
+  it("skips role-only frames without treating them as text", () => {
+    const { deltas } = collectDeltas(
+      'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n' +
+        'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
+    );
+    expect(deltas).toEqual(["Hi"]);
+  });
+});
+
+describe("coalesceSseDeltas", () => {
+  const hang = () => new Promise<void>(() => {});
+
+  async function* chunks(...parts: string[]) {
+    for (const part of parts) yield part;
+  }
+
+  it("flushes the first delta immediately, then coalesces up to maxChars", async () => {
+    const out: string[] = [];
+    await coalesceSseDeltas(chunks("A", "bb", "cc", "d"), (delta) => out.push(delta), {
+      maxChars: 4,
+      wait: hang,
+    });
+    expect(out).toEqual(["A", "bbcc", "d"]);
+  });
+
+  it("flushes leftover text when the wait elapses", async () => {
+    const out: string[] = [];
+    await coalesceSseDeltas(chunks("Hi", "a", "b"), (delta) => out.push(delta), {
+      maxChars: 100,
+      wait: async () => undefined,
+    });
+    expect(out[0]).toBe("Hi");
+    expect(out.join("")).toBe("Hiab");
+    expect(out.length).toBeGreaterThan(1);
+  });
+
+  it("flushes buffered text before propagating a stream error", async () => {
+    const out: string[] = [];
+    async function* failing() {
+      yield "A";
+      yield "xyz";
+      throw new Error("boom");
+    }
+    await expect(
+      coalesceSseDeltas(failing(), (delta) => out.push(delta), {
+        maxChars: 100,
+        wait: hang,
+      }),
+    ).rejects.toThrow(/boom/);
+    expect(out).toEqual(["A", "xyz"]);
   });
 });
 

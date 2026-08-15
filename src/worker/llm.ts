@@ -315,6 +315,8 @@ export function* extractOpenAiSseDeltas(
     if (!line.startsWith("data:")) continue;
     const data = line.slice(5).trim();
     if (!data || data === "[DONE]") continue;
+    // Role-only / reasoning chunks have no `"content":` key (unlike `"reasoning_content":`).
+    if (!data.includes('"content":')) continue;
     try {
       const parsed = JSON.parse(data) as {
         choices?: Array<{ delta?: { content?: string } }>;
@@ -327,6 +329,126 @@ export function* extractOpenAiSseDeltas(
   }
 
   return rest;
+}
+
+function joinOpenAiSseDeltas(
+  chunkText: string,
+  carry: string,
+): { text: string; carry: string } {
+  const iter = extractOpenAiSseDeltas(chunkText, carry);
+  let text = "";
+  let next = iter.next();
+  while (!next.done) {
+    text += next.value;
+    next = iter.next();
+  }
+  return { text, carry: next.value };
+}
+
+/** First token goes out immediately; later deltas coalesce up to these budgets. */
+export const SSE_DELTA_FLUSH_CHARS = 64;
+export const SSE_DELTA_FLUSH_MS = 32;
+
+function defaultWait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Collapse tiny model deltas so the Worker JSON.stringifies a handful of
+ * frames per reply instead of one frame per token.
+ */
+export async function coalesceSseDeltas(
+  deltas: AsyncIterable<string>,
+  onDelta: (chunk: string) => void,
+  options?: {
+    maxChars?: number;
+    maxWaitMs?: number;
+    wait?: (ms: number) => Promise<void>;
+  },
+): Promise<void> {
+  const maxChars = options?.maxChars ?? SSE_DELTA_FLUSH_CHARS;
+  const maxWaitMs = options?.maxWaitMs ?? SSE_DELTA_FLUSH_MS;
+  const wait = options?.wait ?? defaultWait;
+
+  const iterator = deltas[Symbol.asyncIterator]();
+  let nextPromise = iterator.next();
+  let buf = "";
+  let first = true;
+
+  try {
+    for (;;) {
+      if (buf.length === 0) {
+        const { done, value } = await nextPromise;
+        if (done) return;
+        buf = value;
+        nextPromise = iterator.next();
+        if (first || buf.length >= maxChars) {
+          onDelta(buf);
+          buf = "";
+          first = false;
+        }
+        continue;
+      }
+
+      const raced = await Promise.race([
+        nextPromise.then((result) => ({ type: "next" as const, result })),
+        wait(maxWaitMs).then(() => ({ type: "timeout" as const })),
+      ]);
+
+      if (raced.type === "timeout") {
+        onDelta(buf);
+        buf = "";
+        continue;
+      }
+
+      const { done, value } = raced.result;
+      if (done) {
+        onDelta(buf);
+        return;
+      }
+      buf += value;
+      nextPromise = iterator.next();
+      if (buf.length >= maxChars) {
+        onDelta(buf);
+        buf = "";
+      }
+    }
+  } catch (err) {
+    if (buf) onDelta(buf);
+    throw err;
+  }
+}
+
+const CHAT_SSE_HEADERS = {
+  "Content-Type": "text/event-stream; charset=utf-8",
+  "Cache-Control": "no-cache, no-transform",
+  Connection: "keep-alive",
+  "X-Accel-Buffering": "no",
+};
+
+/** SSE response: coalesced `{delta}` frames, then `{done}` or `{error}`. */
+export function chatSseResponse(deltas: AsyncIterable<string>): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (data: unknown) => {
+        controller.enqueue(encoder.encode(sseEncode(data)));
+      };
+      try {
+        await coalesceSseDeltas(deltas, (delta) => send({ delta }));
+        send({ done: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Chat failed";
+        send({ error: message });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, { headers: CHAT_SSE_HEADERS });
 }
 
 async function* streamDeepSeek(
@@ -363,21 +485,13 @@ async function* streamDeepSeek(
       const { done, value } = await reader.read();
       if (done) break;
       const text = decoder.decode(value, { stream: true });
-      const iter = extractOpenAiSseDeltas(text, carry);
-      let next = iter.next();
-      while (!next.done) {
-        yield next.value;
-        next = iter.next();
-      }
-      carry = next.value;
+      const pulled = joinOpenAiSseDeltas(text, carry);
+      carry = pulled.carry;
+      if (pulled.text) yield pulled.text;
     }
     if (carry.trim()) {
-      const iter = extractOpenAiSseDeltas("\n", carry);
-      let next = iter.next();
-      while (!next.done) {
-        yield next.value;
-        next = iter.next();
-      }
+      const pulled = joinOpenAiSseDeltas("\n", carry);
+      if (pulled.text) yield pulled.text;
     }
   } finally {
     reader.releaseLock();

@@ -12,7 +12,7 @@ import {
   generateMcq,
   UnusableMaterialError,
   normalizeLanguage,
-  sseEncode,
+  chatSseResponse,
   streamAskAnything,
   streamChatAboutQuestion,
 } from "./llm";
@@ -285,31 +285,7 @@ app.post("/api/chat", async (c) => {
   }
 
   const language = normalizeLanguage(body.language);
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        for await (const delta of streamAskAnything(c.env, language, history)) {
-          controller.enqueue(encoder.encode(sseEncode({ delta })));
-        }
-        controller.enqueue(encoder.encode(sseEncode({ done: true })));
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Chat failed";
-        controller.enqueue(encoder.encode(sseEncode({ error: message })));
-      } finally {
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
+  return chatSseResponse(streamAskAnything(c.env, language, history));
 });
 
 /** Deeper Q&A about one question after answering (SSE stream). */
@@ -375,35 +351,7 @@ app.post("/api/quizzes/:id/chat", async (c) => {
     language,
   };
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        for await (const delta of streamChatAboutQuestion(
-          c.env,
-          ctx,
-          history,
-        )) {
-          controller.enqueue(encoder.encode(sseEncode({ delta })));
-        }
-        controller.enqueue(encoder.encode(sseEncode({ done: true })));
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Chat failed";
-        controller.enqueue(encoder.encode(sseEncode({ error: message })));
-      } finally {
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
+  return chatSseResponse(streamChatAboutQuestion(c.env, ctx, history));
 });
 
 /** Immediate single-question feedback (no attempt row). */
