@@ -41,6 +41,12 @@ export function contentLanguageLabel(lang: AppLanguage): string {
   return lang === "zh" ? "中文" : "English";
 }
 
+export function chatTruncatedHint(lang: AppLanguage): string {
+  return lang === "zh"
+    ? "回复被截断了，可以让我继续。"
+    : "Reply was cut off. Ask me to continue.";
+}
+
 /** Suggested follow-ups match the content language. */
 export function chatSuggestions(lang: AppLanguage): string[] {
   if (lang === "zh") {

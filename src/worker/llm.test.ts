@@ -3,6 +3,7 @@ import {
   coalesceSseDeltas,
   extractOpenAiSseDeltas,
   normalizeLanguage,
+  pullOpenAiChatSse,
   sseEncode,
   UnusableMaterialError,
   validateQuestions,
@@ -70,6 +71,18 @@ describe("extractOpenAiSseDeltas", () => {
   });
 });
 
+describe("pullOpenAiChatSse", () => {
+  it("reads finish_reason=length from a content-less chunk", () => {
+    const pulled = pullOpenAiChatSse(
+      'data: {"choices":[{"delta":{"content":"答案"}}]}\n\n' +
+        'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n',
+      "",
+    );
+    expect(pulled.text).toBe("答案");
+    expect(pulled.finishReason).toBe("length");
+  });
+});
+
 describe("coalesceSseDeltas", () => {
   const hang = () => new Promise<void>(() => {});
 
@@ -111,6 +124,18 @@ describe("coalesceSseDeltas", () => {
       }),
     ).rejects.toThrow(/boom/);
     expect(out).toEqual(["A", "xyz"]);
+  });
+
+  it("propagates truncated from the stream return value", async () => {
+    async function* cutOff() {
+      yield "Hi";
+      return { truncated: true };
+    }
+    const result = await coalesceSseDeltas(cutOff(), () => {}, {
+      maxChars: 100,
+      wait: hang,
+    });
+    expect(result).toEqual({ truncated: true });
   });
 });
 

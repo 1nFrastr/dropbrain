@@ -1521,6 +1521,13 @@ button.history-more.ghost.icon-btn {
   font-size: 0.88rem;
 }
 
+.chat-truncated {
+  margin: 0.45rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .chat-composer {
   display: grid;
   grid-template-columns: 1fr auto;

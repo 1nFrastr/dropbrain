@@ -15,7 +15,7 @@ export type ChatStreamFn = (
   messages: ChatTurn[],
   onDelta: (delta: string) => void,
   signal: AbortSignal,
-) => Promise<string>;
+) => Promise<{ text: string; truncated: boolean }>;
 
 type Props = {
   open: boolean;
@@ -30,6 +30,7 @@ type Props = {
   messages: ChatTurn[];
   onMessagesChange: (messages: ChatTurn[]) => void;
   stream: ChatStreamFn;
+  truncatedHint?: string;
   /** Reset focus/scroll when this identity changes (e.g. question id). */
   threadKey?: string;
 };
@@ -47,6 +48,7 @@ export default function ChatSidebar({
   messages,
   onMessagesChange,
   stream,
+  truncatedHint = "Reply was cut off. Ask me to continue.",
   threadKey,
 }: Props) {
   const [draft, setDraft] = useState("");
@@ -169,7 +171,7 @@ export default function ChatSidebar({
 
     let assembled = "";
     try {
-      const full = await stream(
+      const { text: full, truncated } = await stream(
         next,
         (delta) => {
           assembled += delta;
@@ -203,7 +205,7 @@ export default function ChatSidebar({
       }
       const finalMessages: ChatTurn[] = [
         ...next,
-        { role: "assistant", content: finalContent },
+        { role: "assistant", content: finalContent, truncated },
       ];
       settledBubbleIndexRef.current = finalMessages.length - 1;
       skipScrollPinRef.current = true;
@@ -327,6 +329,9 @@ export default function ChatSidebar({
                 {m.role === "assistant" ? (
                   <>
                     <ChatMarkdown>{m.content}</ChatMarkdown>
+                    {m.truncated ? (
+                      <p className="chat-truncated">{truncatedHint}</p>
+                    ) : null}
                     <div className="chat-bubble-actions">
                       <button
                         type="button"

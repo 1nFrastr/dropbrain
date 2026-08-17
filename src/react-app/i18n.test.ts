@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   askAnythingSuggestions,
   chatSuggestions,
+  chatTruncatedHint,
   detectOsLanguage,
 } from "./i18n";
 import { consumeSseFrames } from "./sse";
@@ -53,5 +54,12 @@ describe("consumeSseFrames", () => {
   it("surfaces error events", () => {
     const { events } = consumeSseFrames('data: {"error":"boom"}\n\n');
     expect(events[0]).toEqual({ error: "boom" });
+  });
+});
+
+describe("chatTruncatedHint", () => {
+  it("matches the content language", () => {
+    expect(chatTruncatedHint("zh")).toMatch(/截断/);
+    expect(chatTruncatedHint("en")).toMatch(/cut off/i);
   });
 });

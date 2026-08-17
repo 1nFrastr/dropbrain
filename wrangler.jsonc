@@ -23,5 +23,18 @@
   ],
   "vars": {
     "DEEPSEEK_MODEL": "deepseek-chat"
-  }
+  },
+  // Built-in Rate Limiting bindings (per Cloudflare location). Window must be 10 or 60s.
+  "ratelimits": [
+    {
+      "name": "RATE_LIMITER_QUIZ",
+      "namespace_id": "1001",
+      "simple": { "limit": 3, "period": 60 }
+    },
+    {
+      "name": "RATE_LIMITER_CHAT",
+      "namespace_id": "1002",
+      "simple": { "limit": 10, "period": 60 }
+    }
+  ]
 }

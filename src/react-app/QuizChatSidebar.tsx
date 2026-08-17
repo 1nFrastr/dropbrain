@@ -5,6 +5,7 @@ import {
 import ChatSidebar from "./ChatSidebar";
 import {
   chatSuggestions,
+  chatTruncatedHint,
   type AppLanguage,
 } from "./i18n";
 
@@ -46,6 +47,7 @@ export default function QuizChatSidebar({
           : "Chat needs a network connection. Your quiz progress still works offline."
       }
       suggestions={online ? chatSuggestions(language) : []}
+      truncatedHint={chatTruncatedHint(language)}
       ariaLabel="Question chat"
       threadKey={questionId}
       messages={messages}

@@ -2,8 +2,10 @@ import type { GeneratedQuestion } from "./types";
 import {
   clampText,
   MAX_BODY_CHARS,
+  MAX_CHAT_COMPLETION_TOKENS,
   MAX_CHAT_MATERIAL_CHARS,
   MAX_CHAT_MESSAGE_CHARS,
+  MAX_QUIZ_COMPLETION_TOKENS,
 } from "../shared/limits";
 import { assertUsableSourceBody, UnusableSourceError } from "./ingest";
 
@@ -258,15 +260,21 @@ function deepSeekAuth(env: Env): { apiKey: string; model: string } {
 function deepSeekBody(
   model: string,
   messages: ChatMessage[],
-  options?: { json?: boolean; temperature?: number; stream?: boolean },
+  options: {
+    json?: boolean;
+    temperature?: number;
+    stream?: boolean;
+    maxTokens: number;
+  },
 ) {
   return {
     model,
-    temperature: options?.temperature ?? 0.4,
+    temperature: options.temperature ?? 0.4,
+    max_tokens: options.maxTokens,
     // V4 thinks by default; skip CoT so chat tokens start immediately.
     thinking: { type: "disabled" },
-    ...(options?.stream ? { stream: true } : {}),
-    ...(options?.json ? { response_format: { type: "json_object" } } : {}),
+    ...(options.stream ? { stream: true } : {}),
+    ...(options.json ? { response_format: { type: "json_object" } } : {}),
     messages,
   };
 }
@@ -274,8 +282,8 @@ function deepSeekBody(
 async function callDeepSeek(
   env: Env,
   messages: ChatMessage[],
-  options?: { json?: boolean; temperature?: number },
-): Promise<string> {
+  options: { json?: boolean; temperature?: number; maxTokens: number },
+): Promise<{ content: string; truncated: boolean }> {
   const { apiKey, model } = deepSeekAuth(env);
   const res = await fetch(`${DEEPSEEK_API_BASE}/chat/completions`, {
     method: "POST",
@@ -292,13 +300,19 @@ async function callDeepSeek(
   }
 
   const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{
+      message?: { content?: string };
+      finish_reason?: string | null;
+    }>;
   };
   const content = data.choices?.[0]?.message?.content;
   if (!content) {
     throw new Error("Empty completion from DeepSeek.");
   }
-  return content;
+  return {
+    content,
+    truncated: data.choices?.[0]?.finish_reason === "length",
+  };
 }
 
 /** Parse OpenAI-compatible SSE chunks: `data: {"choices":[{"delta":{"content":"..."}}]}\n\n`. */
@@ -331,18 +345,40 @@ export function* extractOpenAiSseDeltas(
   return rest;
 }
 
-function joinOpenAiSseDeltas(
+export function pullOpenAiChatSse(
   chunkText: string,
   carry: string,
-): { text: string; carry: string } {
-  const iter = extractOpenAiSseDeltas(chunkText, carry);
+): { text: string; carry: string; finishReason: string | null } {
+  const buffer = carry + chunkText;
+  const lines = buffer.split("\n");
+  const rest = lines.pop() ?? "";
   let text = "";
-  let next = iter.next();
-  while (!next.done) {
-    text += next.value;
-    next = iter.next();
+  let finishReason: string | null = null;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line.startsWith("data:")) continue;
+    const data = line.slice(5).trim();
+    if (!data || data === "[DONE]") continue;
+    try {
+      const parsed = JSON.parse(data) as {
+        choices?: Array<{
+          delta?: { content?: string };
+          finish_reason?: string | null;
+        }>;
+      };
+      const choice = parsed.choices?.[0];
+      const delta = choice?.delta?.content;
+      if (delta) text += delta;
+      if (typeof choice?.finish_reason === "string" && choice.finish_reason) {
+        finishReason = choice.finish_reason;
+      }
+    } catch {
+      /* skip malformed chunk */
+    }
   }
-  return { text, carry: next.value };
+
+  return { text, carry: rest, finishReason };
 }
 
 /** First token goes out immediately; later deltas coalesce up to these budgets. */
@@ -359,6 +395,15 @@ function defaultWait(ms: number): Promise<void> {
  * Collapse tiny model deltas so the Worker JSON.stringifies a handful of
  * frames per reply instead of one frame per token.
  */
+function truncatedFromIteratorResult(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "truncated" in value &&
+    (value as { truncated?: unknown }).truncated === true
+  );
+}
+
 export async function coalesceSseDeltas(
   deltas: AsyncIterable<string>,
   onDelta: (chunk: string) => void,
@@ -367,7 +412,7 @@ export async function coalesceSseDeltas(
     maxWaitMs?: number;
     wait?: (ms: number) => Promise<void>;
   },
-): Promise<void> {
+): Promise<{ truncated: boolean }> {
   const maxChars = options?.maxChars ?? SSE_DELTA_FLUSH_CHARS;
   const maxWaitMs = options?.maxWaitMs ?? SSE_DELTA_FLUSH_MS;
   const wait = options?.wait ?? defaultWait;
@@ -381,7 +426,7 @@ export async function coalesceSseDeltas(
     for (;;) {
       if (buf.length === 0) {
         const { done, value } = await nextPromise;
-        if (done) return;
+        if (done) return { truncated: truncatedFromIteratorResult(value) };
         buf = value;
         nextPromise = iterator.next();
         if (first || buf.length >= maxChars) {
@@ -406,7 +451,7 @@ export async function coalesceSseDeltas(
       const { done, value } = raced.result;
       if (done) {
         onDelta(buf);
-        return;
+        return { truncated: truncatedFromIteratorResult(value) };
       }
       buf += value;
       nextPromise = iterator.next();
@@ -437,7 +482,10 @@ export function chatSseResponse(deltas: AsyncIterable<string>): Response {
         controller.enqueue(encoder.encode(sseEncode(data)));
       };
       try {
-        await coalesceSseDeltas(deltas, (delta) => send({ delta }));
+        const { truncated } = await coalesceSseDeltas(deltas, (delta) =>
+          send({ delta }),
+        );
+        if (truncated) send({ truncated: true });
         send({ done: true });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Chat failed";
@@ -454,8 +502,8 @@ export function chatSseResponse(deltas: AsyncIterable<string>): Response {
 async function* streamDeepSeek(
   env: Env,
   messages: ChatMessage[],
-  options?: { temperature?: number },
-): AsyncGenerator<string> {
+  options: { temperature?: number; maxTokens: number },
+): AsyncGenerator<string, { truncated: boolean }> {
   const { apiKey, model } = deepSeekAuth(env);
   const res = await fetch(`${DEEPSEEK_API_BASE}/chat/completions`, {
     method: "POST",
@@ -466,7 +514,8 @@ async function* streamDeepSeek(
     body: JSON.stringify(
       deepSeekBody(model, messages, {
         stream: true,
-        temperature: options?.temperature ?? 0.5,
+        temperature: options.temperature ?? 0.5,
+        maxTokens: options.maxTokens,
       }),
     ),
   });
@@ -479,39 +528,48 @@ async function* streamDeepSeek(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let carry = "";
+  let truncated = false;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       const text = decoder.decode(value, { stream: true });
-      const pulled = joinOpenAiSseDeltas(text, carry);
+      const pulled = pullOpenAiChatSse(text, carry);
       carry = pulled.carry;
+      if (pulled.finishReason === "length") truncated = true;
       if (pulled.text) yield pulled.text;
     }
     if (carry.trim()) {
-      const pulled = joinOpenAiSseDeltas("\n", carry);
+      const pulled = pullOpenAiChatSse("\n", carry);
+      if (pulled.finishReason === "length") truncated = true;
       if (pulled.text) yield pulled.text;
     }
   } finally {
     reader.releaseLock();
   }
+
+  return { truncated };
 }
 
 async function completeChat(
   env: Env,
   messages: ChatMessage[],
-  options?: { json?: boolean; temperature?: number },
+  options: { json?: boolean; temperature?: number; maxTokens: number },
 ): Promise<string> {
-  return callDeepSeek(env, messages, options);
+  const { content, truncated } = await callDeepSeek(env, messages, options);
+  if (truncated && options.json) {
+    throw new Error("Quiz generation was cut off. Try fewer questions.");
+  }
+  return content;
 }
 
 async function* streamChat(
   env: Env,
   messages: ChatMessage[],
-  options?: { temperature?: number },
-): AsyncGenerator<string> {
-  yield* streamDeepSeek(env, messages, options);
+  options: { temperature?: number; maxTokens: number },
+): AsyncGenerator<string, { truncated: boolean }> {
+  return yield* streamDeepSeek(env, messages, options);
 }
 
 const MCQ_REPAIR_HINT =
@@ -540,7 +598,11 @@ async function generateOnce(
       },
       { role: "user", content: userContent },
     ],
-    { json: true, temperature: attempt === 0 ? 0.4 : 0.6 },
+    {
+      json: true,
+      temperature: attempt === 0 ? 0.4 : 0.6,
+      maxTokens: MAX_QUIZ_COMPLETION_TOKENS,
+    },
   );
   const parsed = extractJson(text);
   return validateQuestions(parsed, count);
@@ -630,7 +692,7 @@ export async function chatAboutQuestion(
   return completeChat(
     env,
     [{ role: "system", content: buildQuestionChatSystem(ctx) }, ...trimmed],
-    { temperature: 0.5 },
+    { temperature: 0.5, maxTokens: MAX_CHAT_COMPLETION_TOKENS },
   );
 }
 
@@ -638,12 +700,12 @@ export async function* streamChatAboutQuestion(
   env: Env,
   ctx: QuestionChatContext,
   history: Array<{ role: "user" | "assistant"; content: string }>,
-): AsyncGenerator<string> {
+): AsyncGenerator<string, { truncated: boolean }> {
   const trimmed = prepareChatHistory(history);
-  yield* streamChat(
+  return yield* streamChat(
     env,
     [{ role: "system", content: buildQuestionChatSystem(ctx) }, ...trimmed],
-    { temperature: 0.5 },
+    { temperature: 0.5, maxTokens: MAX_CHAT_COMPLETION_TOKENS },
   );
 }
 
@@ -662,15 +724,15 @@ export async function* streamAskAnything(
   env: Env,
   language: AppLanguage,
   history: Array<{ role: "user" | "assistant"; content: string }>,
-): AsyncGenerator<string> {
+): AsyncGenerator<string, { truncated: boolean }> {
   const trimmed = prepareChatHistory(history);
-  yield* streamChat(
+  return yield* streamChat(
     env,
     [
       { role: "system", content: buildAskAnythingSystem(language) },
       ...trimmed,
     ],
-    { temperature: 0.6 },
+    { temperature: 0.6, maxTokens: MAX_CHAT_COMPLETION_TOKENS },
   );
 }
 

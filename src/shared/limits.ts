@@ -9,6 +9,12 @@ export const MAX_CHAT_MATERIAL_CHARS = 12_000;
 /** Max characters per chat turn (user or assistant) sent to the LLM. */
 export const MAX_CHAT_MESSAGE_CHARS = 4_000;
 
+/** Max completion tokens for study chat (home + per-question). */
+export const MAX_CHAT_COMPLETION_TOKENS = 2_048;
+
+/** Max completion tokens for quiz JSON generation (up to 20 MCQs). */
+export const MAX_QUIZ_COMPLETION_TOKENS = 8_192;
+
 export const SOURCE_BODY_TRUNCATION_MARKER =
   "[Content truncated for quiz generation.]";
 

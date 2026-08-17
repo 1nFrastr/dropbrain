@@ -29,6 +29,7 @@ import {
 } from "./homePrefs";
 import {
   askAnythingSuggestions,
+  chatTruncatedHint,
   resolveInitialLanguage,
   saveLanguage,
   type AppLanguage,
@@ -685,6 +686,7 @@ export default function HomePage() {
         title="Ask anything"
         emptyPrompt="Ask about any topic — explanations, quick drills, or study tips."
         suggestions={askAnythingSuggestions(contentLang)}
+        truncatedHint={chatTruncatedHint(contentLang)}
         placeholder="Ask anything…"
         ariaLabel="Ask anything chat"
         threadKey="ask-anything"

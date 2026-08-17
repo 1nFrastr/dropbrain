@@ -21,6 +21,7 @@ import {
   gradeAnswers,
   type GradeQuestion,
 } from "../shared/grade";
+import { cloudflareAiRateLimit } from "./rateLimit";
 import {
   DEFAULT_QUIZ_COUNT,
   MAX_QUIZ_COUNT,
@@ -113,76 +114,80 @@ app.post("/api/sources", async (c) => {
   }
 });
 
-app.post("/api/quizzes", async (c) => {
-  const body = await c.req.json<{
-    sourceId?: string;
-    count?: number;
-    language?: string;
-  }>();
-  if (!body.sourceId) {
-    return c.json({ error: "sourceId is required" }, 400);
-  }
+app.post(
+  "/api/quizzes",
+  cloudflareAiRateLimit<AppEnv>((c) => c.env.RATE_LIMITER_QUIZ),
+  async (c) => {
+    const body = await c.req.json<{
+      sourceId?: string;
+      count?: number;
+      language?: string;
+    }>();
+    if (!body.sourceId) {
+      return c.json({ error: "sourceId is required" }, 400);
+    }
 
-  const count = Math.min(
-    MAX_QUIZ_COUNT,
-    Math.max(MIN_QUIZ_COUNT, Number(body.count) || DEFAULT_QUIZ_COUNT),
-  );
-  const language = normalizeLanguage(body.language);
-
-  const source = await c.env.DB.prepare(
-    `SELECT id, type, title, body_md, url, created_at FROM sources WHERE id = ?`,
-  )
-    .bind(body.sourceId)
-    .first<SourceRow>();
-
-  if (!source) {
-    return c.json({ error: "Source not found" }, 404);
-  }
-
-  try {
-    const questions = await generateMcq(c.env, source.body_md, count, language);
-    const quizId = crypto.randomUUID();
-
-    await c.env.DB.prepare(
-      `INSERT INTO quizzes (id, source_id) VALUES (?, ?)`,
-    )
-      .bind(quizId, source.id)
-      .run();
-
-    const stmts = questions.map((q) =>
-      c.env.DB.prepare(
-        `INSERT INTO questions
-          (id, quiz_id, stem, options_json, correct_index, explanation, tags_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        crypto.randomUUID(),
-        quizId,
-        q.stem,
-        JSON.stringify(q.options),
-        q.correctIndex,
-        q.explanation,
-        JSON.stringify(q.tags),
-      ),
+    const count = Math.min(
+      MAX_QUIZ_COUNT,
+      Math.max(MIN_QUIZ_COUNT, Number(body.count) || DEFAULT_QUIZ_COUNT),
     );
-    await c.env.DB.batch(stmts);
+    const language = normalizeLanguage(body.language);
 
-    return c.json({
-      quizId,
-      sourceId: source.id,
-      title: source.title,
-      count: questions.length,
-      language,
-    });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Quiz generation failed";
-    const status =
-      err instanceof UnusableMaterialError || err instanceof UnusableSourceError
-        ? 400
-        : 500;
-    return c.json({ error: message }, status);
-  }
-});
+    const source = await c.env.DB.prepare(
+      `SELECT id, type, title, body_md, url, created_at FROM sources WHERE id = ?`,
+    )
+      .bind(body.sourceId)
+      .first<SourceRow>();
+
+    if (!source) {
+      return c.json({ error: "Source not found" }, 404);
+    }
+
+    try {
+      const questions = await generateMcq(c.env, source.body_md, count, language);
+      const quizId = crypto.randomUUID();
+
+      await c.env.DB.prepare(
+        `INSERT INTO quizzes (id, source_id) VALUES (?, ?)`,
+      )
+        .bind(quizId, source.id)
+        .run();
+
+      const stmts = questions.map((q) =>
+        c.env.DB.prepare(
+          `INSERT INTO questions
+            (id, quiz_id, stem, options_json, correct_index, explanation, tags_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          crypto.randomUUID(),
+          quizId,
+          q.stem,
+          JSON.stringify(q.options),
+          q.correctIndex,
+          q.explanation,
+          JSON.stringify(q.tags),
+        ),
+      );
+      await c.env.DB.batch(stmts);
+
+      return c.json({
+        quizId,
+        sourceId: source.id,
+        title: source.title,
+        count: questions.length,
+        language,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Quiz generation failed";
+      const status =
+        err instanceof UnusableMaterialError || err instanceof UnusableSourceError
+          ? 400
+          : 500;
+      return c.json({ error: message }, status);
+    }
+  },
+);
 
 app.get("/api/quizzes/:id", async (c) => {
   const quizId = c.req.param("id");
@@ -260,99 +265,107 @@ async function loadQuizQuestions(db: D1Database, quizId: string) {
 }
 
 /** Open-ended study chat from the home page (SSE stream). */
-app.post("/api/chat", async (c) => {
-  const body = await c.req.json<{
-    language?: string;
-    messages?: Array<{ role?: string; content?: string }>;
-  }>();
+app.post(
+  "/api/chat",
+  cloudflareAiRateLimit<AppEnv>((c) => c.env.RATE_LIMITER_CHAT),
+  async (c) => {
+    const body = await c.req.json<{
+      language?: string;
+      messages?: Array<{ role?: string; content?: string }>;
+    }>();
 
-  if (!Array.isArray(body.messages) || body.messages.length === 0) {
-    return c.json({ error: "messages required" }, 400);
-  }
-
-  const history: Array<{ role: "user" | "assistant"; content: string }> = [];
-  for (const m of body.messages.slice(-12)) {
-    if (
-      (m.role === "user" || m.role === "assistant") &&
-      typeof m.content === "string" &&
-      m.content.trim()
-    ) {
-      history.push({ role: m.role, content: m.content.trim() });
+    if (!Array.isArray(body.messages) || body.messages.length === 0) {
+      return c.json({ error: "messages required" }, 400);
     }
-  }
-  if (history.length === 0 || history[history.length - 1]?.role !== "user") {
-    return c.json({ error: "messages must end with a user turn" }, 400);
-  }
 
-  const language = normalizeLanguage(body.language);
-  return chatSseResponse(streamAskAnything(c.env, language, history));
-});
+    const history: Array<{ role: "user" | "assistant"; content: string }> = [];
+    for (const m of body.messages.slice(-12)) {
+      if (
+        (m.role === "user" || m.role === "assistant") &&
+        typeof m.content === "string" &&
+        m.content.trim()
+      ) {
+        history.push({ role: m.role, content: m.content.trim() });
+      }
+    }
+    if (history.length === 0 || history[history.length - 1]?.role !== "user") {
+      return c.json({ error: "messages must end with a user turn" }, 400);
+    }
+
+    const language = normalizeLanguage(body.language);
+    return chatSseResponse(streamAskAnything(c.env, language, history));
+  },
+);
 
 /** Deeper Q&A about one question after answering (SSE stream). */
-app.post("/api/quizzes/:id/chat", async (c) => {
-  const quizId = c.req.param("id");
-  const body = await c.req.json<{
-    questionId?: string;
-    choice?: number;
-    language?: string;
-    messages?: Array<{ role?: string; content?: string }>;
-  }>();
+app.post(
+  "/api/quizzes/:id/chat",
+  cloudflareAiRateLimit<AppEnv>((c) => c.env.RATE_LIMITER_CHAT),
+  async (c) => {
+    const quizId = c.req.param("id");
+    const body = await c.req.json<{
+      questionId?: string;
+      choice?: number;
+      language?: string;
+      messages?: Array<{ role?: string; content?: string }>;
+    }>();
 
-  if (!body.questionId) {
-    return c.json({ error: "questionId is required" }, 400);
-  }
-  if (!Array.isArray(body.messages) || body.messages.length === 0) {
-    return c.json({ error: "messages required" }, 400);
-  }
-
-  const history: Array<{ role: "user" | "assistant"; content: string }> = [];
-  for (const m of body.messages.slice(-12)) {
-    if (
-      (m.role === "user" || m.role === "assistant") &&
-      typeof m.content === "string" &&
-      m.content.trim()
-    ) {
-      history.push({ role: m.role, content: m.content.trim() });
+    if (!body.questionId) {
+      return c.json({ error: "questionId is required" }, 400);
     }
-  }
-  if (history.length === 0 || history[history.length - 1]?.role !== "user") {
-    return c.json({ error: "messages must end with a user turn" }, 400);
-  }
+    if (!Array.isArray(body.messages) || body.messages.length === 0) {
+      return c.json({ error: "messages required" }, 400);
+    }
 
-  const language = normalizeLanguage(body.language);
+    const history: Array<{ role: "user" | "assistant"; content: string }> = [];
+    for (const m of body.messages.slice(-12)) {
+      if (
+        (m.role === "user" || m.role === "assistant") &&
+        typeof m.content === "string" &&
+        m.content.trim()
+      ) {
+        history.push({ role: m.role, content: m.content.trim() });
+      }
+    }
+    if (history.length === 0 || history[history.length - 1]?.role !== "user") {
+      return c.json({ error: "messages must end with a user turn" }, 400);
+    }
 
-  const quiz = await c.env.DB.prepare(
-    `SELECT q.id, q.source_id, s.body_md
-     FROM quizzes q JOIN sources s ON s.id = q.source_id
-     WHERE q.id = ?`,
-  )
-    .bind(quizId)
-    .first<{ id: string; source_id: string; body_md: string }>();
+    const language = normalizeLanguage(body.language);
 
-  if (!quiz) return c.json({ error: "Quiz not found" }, 404);
+    const quiz = await c.env.DB.prepare(
+      `SELECT q.id, q.source_id, s.body_md
+       FROM quizzes q JOIN sources s ON s.id = q.source_id
+       WHERE q.id = ?`,
+    )
+      .bind(quizId)
+      .first<{ id: string; source_id: string; body_md: string }>();
 
-  const question = await c.env.DB.prepare(
-    `SELECT id, stem, options_json, correct_index, explanation, tags_json
-     FROM questions WHERE id = ? AND quiz_id = ?`,
-  )
-    .bind(body.questionId, quizId)
-    .first<QuestionRow>();
+    if (!quiz) return c.json({ error: "Quiz not found" }, 404);
 
-  if (!question) return c.json({ error: "Question not found" }, 404);
+    const question = await c.env.DB.prepare(
+      `SELECT id, stem, options_json, correct_index, explanation, tags_json
+       FROM questions WHERE id = ? AND quiz_id = ?`,
+    )
+      .bind(body.questionId, quizId)
+      .first<QuestionRow>();
 
-  const ctx = {
-    stem: question.stem,
-    options: JSON.parse(question.options_json) as string[],
-    correctIndex: question.correct_index,
-    explanation: question.explanation,
-    tags: JSON.parse(question.tags_json) as string[],
-    material: quiz.body_md,
-    userChoice: typeof body.choice === "number" ? body.choice : undefined,
-    language,
-  };
+    if (!question) return c.json({ error: "Question not found" }, 404);
 
-  return chatSseResponse(streamChatAboutQuestion(c.env, ctx, history));
-});
+    const ctx = {
+      stem: question.stem,
+      options: JSON.parse(question.options_json) as string[],
+      correctIndex: question.correct_index,
+      explanation: question.explanation,
+      tags: JSON.parse(question.tags_json) as string[],
+      material: quiz.body_md,
+      userChoice: typeof body.choice === "number" ? body.choice : undefined,
+      language,
+    };
+
+    return chatSseResponse(streamChatAboutQuestion(c.env, ctx, history));
+  },
+);
 
 /** Immediate single-question feedback (no attempt row). */
 app.post("/api/quizzes/:id/check", async (c) => {

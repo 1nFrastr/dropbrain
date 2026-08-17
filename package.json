@@ -15,8 +15,10 @@
     "check": "tsc -b && vitest run && vite build"
   },
   "dependencies": {
+    "@hono-rate-limiter/cloudflare": "^0.2.2",
     "highlight.js": "^11.11.1",
     "hono": "^4.11.1",
+    "hono-rate-limiter": "^0.5.3",
     "lucide-react": "^1.31.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",

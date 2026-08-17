@@ -156,12 +156,16 @@ export function submitQuiz(
   });
 }
 
-export type ChatTurn = { role: "user" | "assistant"; content: string };
+export type ChatTurn = {
+  role: "user" | "assistant";
+  content: string;
+  truncated?: boolean;
+};
 
 async function consumeChatSse(
   res: Response,
   onDelta: (delta: string) => void,
-): Promise<string> {
+): Promise<{ text: string; truncated: boolean }> {
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {
@@ -181,6 +185,7 @@ async function consumeChatSse(
   const decoder = new TextDecoder();
   let buffer = "";
   let full = "";
+  let truncated = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -193,6 +198,7 @@ async function consumeChatSse(
       if (typeof event.error === "string" && event.error) {
         throw new Error(event.error);
       }
+      if (event.truncated === true) truncated = true;
       if (typeof event.delta === "string" && event.delta) {
         full += event.delta;
         onDelta(event.delta);
@@ -200,7 +206,7 @@ async function consumeChatSse(
     }
   }
 
-  return full;
+  return { text: full, truncated };
 }
 
 function chatHeaders(): HeadersInit {
@@ -218,7 +224,7 @@ export async function streamChatAboutQuestion(
   choice: number | undefined,
   onDelta: (delta: string) => void,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<{ text: string; truncated: boolean }> {
   const res = await fetch(`/api/quizzes/${quizId}/chat`, {
     method: "POST",
     credentials: "same-origin",
@@ -234,7 +240,7 @@ export async function streamAskAnything(
   language: AppLanguage,
   onDelta: (delta: string) => void,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<{ text: string; truncated: boolean }> {
   const res = await fetch("/api/chat", {
     method: "POST",
     credentials: "same-origin",
