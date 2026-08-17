@@ -9,6 +9,7 @@ Paste text or a web URL, generate active-recall multiple-choice quizzes, and rev
 - Hono API on Cloudflare Workers
 - React SPA + Vite (`@cloudflare/vite-plugin`)
 - D1, Firecrawl Scrape API, DeepSeek
+- AI rate limits: Workers Rate Limiting bindings + `@hono-rate-limiter/cloudflare`
 
 ## Setup
 
