@@ -40,10 +40,13 @@ import {
   deleteQuizSession,
   formatHistoryWhen,
   getQuizSession,
+  hasCompleteAnswerKey,
   historyStatusLabel,
   listQuizHistory,
   putQuizSession,
+  toAnswerKeyMap,
   type QuizHistoryItem,
+  type QuizSessionRecord,
 } from "./historyStore";
 import QuizCountControl from "./QuizCountControl";
 import QuizInfoCard, { type QuizInfo } from "./QuizInfoCard";
@@ -294,13 +297,41 @@ export default function HomePage() {
     await refreshHistory();
   }
 
+  async function hydrateSessionForExport(
+    session: QuizSessionRecord,
+  ): Promise<QuizSessionRecord> {
+    const needsSource =
+      session.quiz.markdown == null || session.quiz.sourceUrl === undefined;
+    if (!needsSource && hasCompleteAnswerKey(session)) return session;
+    try {
+      const remote = await getQuiz(session.id);
+      return await putQuizSession({
+        ...session,
+        quiz: {
+          ...session.quiz,
+          title: remote.title,
+          sourceUrl: remote.sourceUrl,
+          markdown: remote.markdown,
+          truncated: remote.truncated,
+        },
+        answerKey: {
+          ...session.answerKey,
+          ...toAnswerKeyMap(remote.answerKey),
+        },
+      });
+    } catch {
+      return session;
+    }
+  }
+
   async function onExport(id: string) {
     try {
-      const session = await getQuizSession(id);
-      if (!session) {
+      const local = await getQuizSession(id);
+      if (!local) {
         setHistoryError("Quiz not found in local history.");
         return;
       }
+      const session = await hydrateSessionForExport(local);
       await exportQuizSession(session);
       setHistoryError(null);
     } catch (err) {
