@@ -5,6 +5,8 @@
 }
 
 .hero {
+  position: relative;
+  z-index: 1;
   animation: rise 0.7s ease both;
 }
 
