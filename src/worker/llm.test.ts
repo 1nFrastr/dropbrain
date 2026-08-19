@@ -5,6 +5,7 @@ import {
   normalizeLanguage,
   parseClientQuestionChatContext,
   pullOpenAiChatSse,
+  randomizeAnswerPositions,
   sseEncode,
   UnusableMaterialError,
   validateQuestions,
@@ -264,6 +265,29 @@ describe("validateQuestions", () => {
     };
     const out = validateQuestions({ questions: [zh, zh, zh] }, 3);
     expect(out).toHaveLength(3);
+  });
+});
+
+describe("randomizeAnswerPositions", () => {
+  const question = {
+    stem: "What is 2+2?",
+    options: ["right", "w1", "w2", "w3"] as [string, string, string, string],
+    correctIndex: 0,
+    explanation: "Basic arithmetic.",
+    tags: ["math"],
+  };
+
+  it("keeps the correct option text while breaking consecutive identical slots", () => {
+    const out = randomizeAnswerPositions(
+      [question, question, question, question, question],
+      () => 0,
+    );
+    for (const item of out) {
+      expect(item.options[item.correctIndex]).toBe("right");
+    }
+    for (let i = 1; i < out.length; i++) {
+      expect(out[i]?.correctIndex).not.toBe(out[i - 1]?.correctIndex);
+    }
   });
 });
 

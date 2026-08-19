@@ -66,7 +66,7 @@ Rules:
 - Distractors must sound like plausible misunderstandings of the material.
 - Explanation: 1–2 sentences citing what in the material supports the correct answer. Do not repeat the stem or a single keyword.
 - tags: 1–3 short knowledge-point labels per question.
-- correctIndex is 0-based (0..3).
+- correctIndex is 0-based (0..3). Shuffle the four options independently on every question so the correct answer is not stuck in slot A. Spread correctIndex across 0–3, and never use the same correctIndex on two questions in a row.
 - ${languageInstruction(lang)}
 
 If usable, return ONLY valid JSON with this shape:
@@ -76,12 +76,12 @@ If usable, return ONLY valid JSON with this shape:
     {
       "stem": "What component schedules application containers onto nodes?",
       "options": [
-        "The Control Plane",
         "A container runtime such as containerd",
         "The Minikube CLI",
+        "The Control Plane",
         "The Kubernetes dashboard"
       ],
-      "correctIndex": 0,
+      "correctIndex": 2,
       "explanation": "The material states the Control Plane coordinates scheduling of application containers on cluster nodes.",
       "tags": ["control-plane"]
     }
@@ -223,6 +223,64 @@ export function validateQuestions(
     );
   }
   return validated;
+}
+
+function asFourOptions(options: string[]): [string, string, string, string] {
+  return [options[0]!, options[1]!, options[2]!, options[3]!];
+}
+
+function shuffleOptions(
+  question: GeneratedQuestion,
+  rng: () => number,
+): GeneratedQuestion {
+  const order = [0, 1, 2, 3];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const current = order[i]!;
+    order[i] = order[j]!;
+    order[j] = current;
+  }
+  return {
+    ...question,
+    options: asFourOptions(order.map((i) => question.options[i]!)),
+    correctIndex: order.indexOf(question.correctIndex),
+  };
+}
+
+function moveCorrectTo(
+  question: GeneratedQuestion,
+  targetIndex: number,
+): GeneratedQuestion {
+  if (question.correctIndex === targetIndex) return question;
+  const options = [...question.options];
+  const from = question.correctIndex;
+  const swapped = options[targetIndex]!;
+  options[targetIndex] = options[from]!;
+  options[from] = swapped;
+  return {
+    ...question,
+    options: asFourOptions(options),
+    correctIndex: targetIndex,
+  };
+}
+
+function pickIndexOtherThan(forbidden: number, rng: () => number): number {
+  const slot = Math.floor(rng() * 3);
+  return slot >= forbidden ? slot + 1 : slot;
+}
+
+/** Shuffle option order and break consecutive identical correct slots. */
+export function randomizeAnswerPositions(
+  questions: GeneratedQuestion[],
+  rng: () => number = Math.random,
+): GeneratedQuestion[] {
+  const out = questions.map((question) => shuffleOptions(question, rng));
+  for (let i = 1; i < out.length; i++) {
+    const prev = out[i - 1]!.correctIndex;
+    if (out[i]!.correctIndex !== prev) continue;
+    out[i] = moveCorrectTo(out[i]!, pickIndexOtherThan(prev, rng));
+  }
+  return out;
 }
 
 function extractJson(text: string): unknown {
@@ -573,7 +631,7 @@ async function* streamChat(
 }
 
 const MCQ_REPAIR_HINT =
-  "The previous JSON was invalid. Each stem must be a full question sentence. Each question needs four distinct non-empty option texts (not empty strings, not the letters A/B/C/D). Explanations must be 1–2 real sentences. Skip any malformed item and still return enough complete questions.";
+  "The previous JSON was invalid. Each stem must be a full question sentence. Each question needs four distinct non-empty option texts (not empty strings, not the letters A/B/C/D). Shuffle option order so correctIndex varies and is never the same on two consecutive questions. Explanations must be 1–2 real sentences. Skip any malformed item and still return enough complete questions.";
 
 const MCQ_ATTEMPTS = 3;
 
@@ -594,7 +652,7 @@ async function generateOnce(
       {
         role: "system",
         content:
-          "You generate rigorous active-recall quizzes. First assess whether the material is usable study content; if not, return {\"ok\":false,\"reason\":\"...\"}. Otherwise return {\"ok\":true,\"questions\":[...]}. Reply with JSON only.",
+          "You generate rigorous active-recall quizzes. First assess whether the material is usable study content; if not, return {\"ok\":false,\"reason\":\"...\"}. Otherwise return {\"ok\":true,\"questions\":[...]}. Shuffle option order so the correct slot is random and not repeated on consecutive questions. Reply with JSON only.",
       },
       { role: "user", content: userContent },
     ],
@@ -605,7 +663,7 @@ async function generateOnce(
     },
   );
   const parsed = extractJson(text);
-  return validateQuestions(parsed, count);
+  return randomizeAnswerPositions(validateQuestions(parsed, count));
 }
 
 const LETTERS = ["A", "B", "C", "D"] as const;
