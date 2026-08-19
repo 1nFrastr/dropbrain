@@ -12,6 +12,7 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import {
   createQuiz,
+  createTextSource,
   createUrlSource,
   getQuiz,
   streamAskAnything,
@@ -50,6 +51,7 @@ import {
 } from "./historyStore";
 import QuizCountControl from "./QuizCountControl";
 import QuizInfoCard, { type QuizInfo } from "./QuizInfoCard";
+import { isSampleQuizId, seedSampleQuizzesForNewUser } from "./sampleQuizzes";
 
 type GenPhase = "idle" | "fetching" | "writing" | "done";
 type UrlPreview = CreateSourceResponse & { markdown: string };
@@ -122,6 +124,7 @@ export default function HomePage() {
 
   async function refreshHistory() {
     try {
+      await seedSampleQuizzesForNewUser();
       setHistory(await listQuizHistory());
       setHistoryError(null);
     } catch (err) {
@@ -238,7 +241,10 @@ export default function HomePage() {
         setHistoryError("Quiz not found in local history.");
         return;
       }
-      if (session.quiz.markdown == null || session.quiz.sourceUrl === undefined) {
+      if (
+        !isSampleQuizId(session.id) &&
+        (session.quiz.markdown == null || session.quiz.sourceUrl === undefined)
+      ) {
         try {
           const remote = await getQuiz(id);
           session = await putQuizSession({
@@ -276,6 +282,7 @@ export default function HomePage() {
     quizCount: number,
     language: AppLanguage,
   ) {
+    const sampleMarkdown = isSampleQuizId(sourceId) ? info?.markdown : undefined;
     pendingGen.current = { kind: "fork", sourceId, count: quizCount, language };
     setInfo(null);
     setError(null);
@@ -283,7 +290,12 @@ export default function HomePage() {
     setGenerating(true);
     setGenPhase("writing");
     try {
-      await generateFromSourceId(sourceId, quizCount, language);
+      let resolvedSourceId = sourceId;
+      if (sampleMarkdown) {
+        const source = await createTextSource(sampleMarkdown);
+        resolvedSourceId = source.sourceId;
+      }
+      await generateFromSourceId(resolvedSourceId, quizCount, language);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not fork quiz");
       setGenPhase("writing");
@@ -302,7 +314,9 @@ export default function HomePage() {
   ): Promise<QuizSessionRecord> {
     const needsSource =
       session.quiz.markdown == null || session.quiz.sourceUrl === undefined;
-    if (!needsSource && hasCompleteAnswerKey(session)) return session;
+    if (isSampleQuizId(session.id) || (!needsSource && hasCompleteAnswerKey(session))) {
+      return session;
+    }
     try {
       const remote = await getQuiz(session.id);
       return await putQuizSession({

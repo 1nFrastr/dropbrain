@@ -621,6 +621,38 @@ export type QuestionChatContext = {
   language: AppLanguage;
 };
 
+/** Accept client-supplied context for local-only quizzes (samples). */
+export function parseClientQuestionChatContext(
+  raw: unknown,
+  language: AppLanguage,
+  userChoice?: number,
+): QuestionChatContext | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.stem !== "string" || !o.stem.trim()) return null;
+  if (!Array.isArray(o.options) || o.options.length < 2) return null;
+  if (!o.options.every((item) => typeof item === "string")) return null;
+  if (typeof o.correctIndex !== "number" || !Number.isInteger(o.correctIndex)) {
+    return null;
+  }
+  if (o.correctIndex < 0 || o.correctIndex >= o.options.length) return null;
+  if (typeof o.explanation !== "string") return null;
+  if (typeof o.material !== "string") return null;
+  const tags = Array.isArray(o.tags)
+    ? o.tags.filter((tag): tag is string => typeof tag === "string")
+    : [];
+  return {
+    stem: o.stem,
+    options: o.options,
+    correctIndex: o.correctIndex,
+    explanation: o.explanation,
+    tags,
+    material: o.material.slice(0, MAX_BODY_CHARS),
+    userChoice,
+    language,
+  };
+}
+
 function buildQuestionChatSystem(ctx: QuestionChatContext): string {
   const optionsBlock = ctx.options
     .map((opt, i) => `${LETTERS[i] ?? i}. ${opt}`)

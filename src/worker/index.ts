@@ -15,6 +15,7 @@ import {
   chatSseResponse,
   streamAskAnything,
   streamChatAboutQuestion,
+  parseClientQuestionChatContext,
 } from "./llm";
 import {
   checkChoice,
@@ -308,6 +309,7 @@ app.post(
       choice?: number;
       language?: string;
       messages?: Array<{ role?: string; content?: string }>;
+      context?: unknown;
     }>();
 
     if (!body.questionId) {
@@ -341,27 +343,37 @@ app.post(
       .bind(quizId)
       .first<{ id: string; source_id: string; body_md: string }>();
 
-    if (!quiz) return c.json({ error: "Quiz not found" }, 404);
+    const question = quiz
+      ? await c.env.DB.prepare(
+          `SELECT id, stem, options_json, correct_index, explanation, tags_json
+           FROM questions WHERE id = ? AND quiz_id = ?`,
+        )
+          .bind(body.questionId, quizId)
+          .first<QuestionRow>()
+      : null;
 
-    const question = await c.env.DB.prepare(
-      `SELECT id, stem, options_json, correct_index, explanation, tags_json
-       FROM questions WHERE id = ? AND quiz_id = ?`,
-    )
-      .bind(body.questionId, quizId)
-      .first<QuestionRow>();
+    if (quiz && !question) {
+      return c.json({ error: "Question not found" }, 404);
+    }
 
-    if (!question) return c.json({ error: "Question not found" }, 404);
+    const ctx = question
+      ? {
+          stem: question.stem,
+          options: JSON.parse(question.options_json) as string[],
+          correctIndex: question.correct_index,
+          explanation: question.explanation,
+          tags: JSON.parse(question.tags_json) as string[],
+          material: quiz!.body_md,
+          userChoice: typeof body.choice === "number" ? body.choice : undefined,
+          language,
+        }
+      : parseClientQuestionChatContext(
+          body.context,
+          language,
+          typeof body.choice === "number" ? body.choice : undefined,
+        );
 
-    const ctx = {
-      stem: question.stem,
-      options: JSON.parse(question.options_json) as string[],
-      correctIndex: question.correct_index,
-      explanation: question.explanation,
-      tags: JSON.parse(question.tags_json) as string[],
-      material: quiz.body_md,
-      userChoice: typeof body.choice === "number" ? body.choice : undefined,
-      language,
-    };
+    if (!ctx) return c.json({ error: "Quiz not found" }, 404);
 
     return chatSseResponse(streamChatAboutQuestion(c.env, ctx, history));
   },

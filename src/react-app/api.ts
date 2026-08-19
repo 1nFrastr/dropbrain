@@ -216,6 +216,15 @@ function chatHeaders(): HeadersInit {
   };
 }
 
+export type QuestionChatContextPayload = {
+  stem: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  tags: string[];
+  material: string;
+};
+
 export async function streamChatAboutQuestion(
   quizId: string,
   questionId: string,
@@ -224,13 +233,14 @@ export async function streamChatAboutQuestion(
   choice: number | undefined,
   onDelta: (delta: string) => void,
   signal?: AbortSignal,
+  context?: QuestionChatContextPayload,
 ): Promise<{ text: string; truncated: boolean }> {
   const res = await fetch(`/api/quizzes/${quizId}/chat`, {
     method: "POST",
     credentials: "same-origin",
     signal,
     headers: chatHeaders(),
-    body: JSON.stringify({ questionId, messages, choice, language }),
+    body: JSON.stringify({ questionId, messages, choice, language, context }),
   });
   return consumeChatSse(res, onDelta);
 }

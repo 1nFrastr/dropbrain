@@ -1,6 +1,7 @@
 import {
   streamChatAboutQuestion,
   type ChatTurn,
+  type QuestionChatContextPayload,
 } from "./api";
 import ChatSidebar from "./ChatSidebar";
 import {
@@ -20,6 +21,7 @@ type Props = {
   messages: ChatTurn[];
   onMessagesChange: (messages: ChatTurn[]) => void;
   online?: boolean;
+  context?: QuestionChatContextPayload;
 };
 
 export default function QuizChatSidebar({
@@ -33,6 +35,7 @@ export default function QuizChatSidebar({
   messages,
   onMessagesChange,
   online = true,
+  context,
 }: Props) {
   return (
     <ChatSidebar
@@ -66,6 +69,7 @@ export default function QuizChatSidebar({
           choice,
           onDelta,
           signal,
+          context,
         );
       }}
     />

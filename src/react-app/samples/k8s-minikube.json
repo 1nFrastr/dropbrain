@@ -1,0 +1,110 @@
+{
+  "info": {
+    "id": "fe3b8c76-39df-4c61-8d57-818ff14a85a1",
+    "title": "Using Minikube to Create a Cluster | Kubernetes",
+    "sourceId": "4d660547-fc64-45b0-8d4b-4bb3acc588aa",
+    "sourceUrl": "https://kubernetes.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro",
+    "markdown": "# Using Minikube to Create a Cluster\n\n## Objectives [Heading self-link](https://kubernetes.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/\\#objectives)\n\n- Learn what a Kubernetes cluster is.\n- Learn what Minikube is.\n- Start a Kubernetes cluster on your computer.\n\n## Before you begin [Heading self-link](https://kubernetes.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/\\#before-you-begin)\n\nThis tutorial assumes that you have already installed `minikube`.\nSee [minikube start](https://minikube.sigs.k8s.io/docs/start/) for installation instructions.\n\n#### Note:\n\nOnly execute instructions in **step 1: Installation**. The rest is covered in this tutorial.\n\nYou also need to install `kubectl`.\nSee [Install tools](https://kubernetes.io/docs/tasks/tools/#kubectl) for installation instructions.\n\nThe shell commands in this tutorial use POSIX shell syntax, which is supported by\nthe default shells on most Linux and macOS systems (for example, bash, zsh, or sh).\nWindows users must use a POSIX-compatible shell such as\n[Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install)\nor [Git Bash](https://gitforwindows.org/) to run the commands as written.\nCommands that use `export`, `$()`, and similar constructs are **not** compatible\nwith PowerShell or the Windows Command Prompt.\n\n## Kubernetes Clusters [Heading self-link](https://kubernetes.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/\\#kubernetes-clusters)\n\n_Kubernetes is a production-grade, open-source platform that orchestrates_\n_the placement (scheduling) and execution of application containers_\n_within and across computer clusters._\n\n**Kubernetes coordinates a highly available cluster of computers that are connected**\n**to work as a single unit.** The abstractions in Kubernetes allow you to deploy\ncontainerized applications to a cluster without tying them specifically to individual\nmachines. To make use of this new model of deployment, applications need to be packaged\nin a way that decouples them from individual hosts: they need to be containerized.\nContainerized applications are more flexible and available than in past deployment models,\nwhere applications were installed directly onto specific machines as packages deeply\nintegrated into the host. **Kubernetes automates the distribution and scheduling of**\n**application containers across a cluster in a more efficient way.** Kubernetes is an\nopen-source platform and is production-ready.\n\nA Kubernetes cluster consists of two types of resources:\n\n- The **Control Plane** coordinates the cluster\n- **Nodes** are the workers that run applications\n\n### Cluster Diagram [Heading self-link](https://kubernetes.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/\\#cluster-diagram)\n\n![](https://kubernetes.io/docs/tutorials/kubernetes-basics/public/images/module_01_cluster.svg)\n\n**The Control Plane is responsible for managing the cluster.** The Control Plane\ncoordinates all activities in your cluster, such as scheduling applications, maintaining\napplications' desired state, scaling applications, and rolling out new updates.\n\n_Control Planes manage the cluster and the nodes that are used to host the running_\n_applications._\n\n**A node is a VM or a physical computer that serves as a worker machine in a Kubernetes**\n**cluster.** Each node has a Kubelet, which is an agent for managing the node and\ncommunicating with the Kubernetes control plane. The node should also have tools for\nhandling container operations, such as [containerd](https://containerd.io/docs/)\nor [CRI-O](https://cri-o.io/#what-is-cri-o). A common and supported deployment\nmodel runs Kubernetes control plane components on dedicated control plane nodes.\n\nWhen you deploy applications on Kubernetes, you tell the control plane to start\nthe application containers. The control plane schedules the containers to run on\nthe cluster's nodes. **Node-level components, such as the kubelet, communicate**\n**with the control plane using the [Kubernetes API](https://kubernetes.io/docs/concepts/overview/kubernetes-api/)**,\nwhich the control plane exposes. End users can also use the Kubernetes API directly\nto interact with the cluster.\n\nA Kubernetes cluster can be deployed on either physical or virtual machines. To\nget started with Kubernetes development, you can use Minikube. Minikube is a lightweight\nKubernetes implementation that creates a VM on your local machine and deploys a\nsimple cluster containing only one node. Minikube is available for Linux, macOS,\nand Windows systems. The Minikube CLI provides basic bootstrapping operations for\nworking with your cluster, including start, stop, status, and delete.\n\n## Create a minikube cluster [Heading self-link](https://kubernetes.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/\\#create-a-minikube-cluster)\n\nTo start a minikube cluster:\n\n```shell\nminikube start\n```\n\nTo verify the cluster status:\n\n```shell\nminikube status\n```\n\nFor a complete walkthrough including deploying your first app and exploring the Kubernetes dashboard, see the [Hello Minikube](https://kubernetes.io/docs/tutorials/hello-minikube/) tutorial.\n\n## What's next [Heading self-link](https://kubernetes.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/\\#what-s-next)\n\n- Tutorial [Deploy an App](https://kubernetes.io/docs/tutorials/kubernetes-basics/deploy-app/deploy-intro/).\n- Learn more about [Cluster Architecture](https://kubernetes.io/docs/concepts/architecture/).\n\n## Feedback\n\nWas this page helpful?\n\nYesNo\n\nThanks for the feedback. If you have a specific, answerable question about how to use Kubernetes, ask it on\n[Stack Overflow](https://stackoverflow.com/questions/tagged/kubernetes).\nOpen an issue in the [GitHub Repository](https://www.github.com/kubernetes/website/) if you want to\n[report a problem](https://github.com/kubernetes/website/issues/new?title=Issue%20with%20k8s.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/)\nor\n[suggest an improvement](https://github.com/kubernetes/website/issues/new?title=Improvement%20for%20k8s.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/).\n\nLast modified July 18, 2026 at 9:53 AM PST: [Clarify control plane node description (3a1cad8199)](https://github.com/kubernetes/website/commit/3a1cad81997002ce29496ef304d6d31e98aa90fe)",
+    "truncated": false,
+    "questionCount": 6,
+    "language": "zh",
+    "createdAt": "2026-08-19T07:12:50.138Z"
+  },
+  "questions": [
+    {
+      "id": "a32d2b77-d4c0-49e3-b86a-93883a67393b",
+      "stem": "Kubernetes 集群由哪两种类型的资源组成？",
+      "options": [
+        "控制平面和节点",
+        "Pod 和服务",
+        "容器和镜像",
+        "主节点和工作节点"
+      ],
+      "tags": [
+        "集群架构"
+      ],
+      "correctIndex": 0,
+      "explanation": "材料明确指出 Kubernetes 集群由控制平面（Control Plane）和节点（Nodes）两种资源组成。"
+    },
+    {
+      "id": "ed5e2bfb-a59a-4ad9-8039-f26a4e8dd506",
+      "stem": "在 Kubernetes 集群中，哪个组件负责调度应用容器到节点上运行？",
+      "options": [
+        "节点上的 kubelet",
+        "控制平面",
+        "容器运行时如 containerd",
+        "Minikube CLI"
+      ],
+      "tags": [
+        "控制平面",
+        "调度"
+      ],
+      "correctIndex": 1,
+      "explanation": "材料说明控制平面负责调度应用、维护期望状态、扩展应用等，并调度容器到节点上运行。"
+    },
+    {
+      "id": "edf9802d-4d62-42b6-8065-f0762f7233ac",
+      "stem": "根据材料，节点上的 kubelet 的主要作用是什么？",
+      "options": [
+        "管理节点并与控制平面通信",
+        "调度应用容器",
+        "存储集群状态",
+        "提供用户界面"
+      ],
+      "tags": [
+        "kubelet",
+        "节点"
+      ],
+      "correctIndex": 0,
+      "explanation": "材料指出每个节点都有 kubelet，它是管理节点并与 Kubernetes 控制平面通信的代理。"
+    },
+    {
+      "id": "527823ce-9ea9-4a11-ae43-713ae621a6c8",
+      "stem": "Minikube 创建的集群有什么特点？",
+      "options": [
+        "包含多个节点，用于生产环境",
+        "在本地机器上创建虚拟机，部署单节点集群",
+        "只能在 Linux 系统上运行",
+        "需要手动安装 Kubernetes 控制平面"
+      ],
+      "tags": [
+        "Minikube",
+        "单节点"
+      ],
+      "correctIndex": 1,
+      "explanation": "材料说明 Minikube 是轻量级实现，在本地机器上创建虚拟机并部署仅包含一个节点的简单集群。"
+    },
+    {
+      "id": "9624ff3e-3369-4b61-bc0f-1f83027b8ca8",
+      "stem": "根据材料，Windows 用户运行本教程中的 shell 命令应使用哪种环境？",
+      "options": [
+        "PowerShell",
+        "Windows 命令提示符",
+        "Windows 子系统 for Linux (WSL) 或 Git Bash",
+        "任何 Windows 终端"
+      ],
+      "tags": [
+        "Windows",
+        "shell"
+      ],
+      "correctIndex": 2,
+      "explanation": "材料指出 Windows 用户必须使用 POSIX 兼容 shell，如 WSL 或 Git Bash，因为命令与 PowerShell 或命令提示符不兼容。"
+    },
+    {
+      "id": "e9af9feb-af64-4e50-8d9a-c9e71f438803",
+      "stem": "要启动 minikube 集群，应使用哪个命令？",
+      "options": [
+        "minikube status",
+        "minikube start",
+        "kubectl start",
+        "minikube create"
+      ],
+      "tags": [
+        "Minikube",
+        "命令"
+      ],
+      "correctIndex": 1,
+      "explanation": "材料明确给出启动 minikube 集群的命令是 `minikube start`。"
+    }
+  ]
+}

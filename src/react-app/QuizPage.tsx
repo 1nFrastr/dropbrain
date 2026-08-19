@@ -12,6 +12,7 @@ import {
   getQuiz,
   submitQuiz,
   type ChatTurn,
+  type QuestionChatContextPayload,
 } from "./api";
 import {
   createSessionRecord,
@@ -26,12 +27,60 @@ import { resolveInitialLanguage } from "./i18n";
 import { checkAnswerLocally, submitQuizLocally } from "./localGrade";
 import QuizChatSidebar from "./QuizChatSidebar";
 import ResultsView from "./ResultsView";
+import {
+  getSampleQuiz,
+  isSampleQuizId,
+  quizPayloadFromSample,
+} from "./sampleQuizzes";
 import { useOnlineStatus } from "./useOnlineStatus";
 
 const LETTERS = ["A", "B", "C", "D"] as const;
 
 function needsSourceHydration(session: QuizSessionRecord): boolean {
   return session.quiz.markdown == null || session.quiz.sourceUrl === undefined;
+}
+
+function hydrateFromSample(
+  session: QuizSessionRecord,
+  quizId: string,
+): QuizSessionRecord | null {
+  const sample = getSampleQuiz(quizId);
+  if (!sample) return null;
+  const payload = quizPayloadFromSample(sample);
+  return {
+    ...session,
+    title: payload.title,
+    sourceId: payload.sourceId,
+    quiz: {
+      ...session.quiz,
+      title: payload.title,
+      sourceUrl: payload.sourceUrl,
+      markdown: payload.markdown,
+      truncated: payload.truncated,
+      questions: payload.questions,
+    },
+    answerKey: {
+      ...session.answerKey,
+      ...toAnswerKeyMap(payload.answerKey),
+    },
+  };
+}
+
+function localQuestionChatContext(
+  session: QuizSessionRecord,
+  questionId: string,
+): QuestionChatContextPayload | undefined {
+  const question = session.quiz.questions.find((q) => q.id === questionId);
+  const key = session.answerKey[questionId];
+  if (!question || !key || !isSampleQuizId(session.id)) return undefined;
+  return {
+    stem: question.stem,
+    options: question.options,
+    correctIndex: key.correctIndex,
+    explanation: key.explanation,
+    tags: question.tags,
+    material: session.quiz.markdown ?? "",
+  };
 }
 
 export default function QuizPage() {
@@ -58,24 +107,29 @@ export default function QuizPage() {
         if (local) {
           let next = local;
           if (!hasCompleteAnswerKey(local) || needsSourceHydration(local)) {
-            try {
-              const remote = await getQuiz(quizId);
-              next = await putQuizSession({
-                ...local,
-                quiz: {
-                  ...local.quiz,
-                  title: remote.title,
-                  sourceUrl: remote.sourceUrl,
-                  markdown: remote.markdown,
-                  truncated: remote.truncated,
-                },
-                answerKey: {
-                  ...local.answerKey,
-                  ...toAnswerKeyMap(remote.answerKey),
-                },
-              });
-            } catch {
-              /* keep session; check/submit may fall back to API when online */
+            const fromSample = hydrateFromSample(local, quizId);
+            if (fromSample) {
+              next = await putQuizSession(fromSample);
+            } else {
+              try {
+                const remote = await getQuiz(quizId);
+                next = await putQuizSession({
+                  ...local,
+                  quiz: {
+                    ...local.quiz,
+                    title: remote.title,
+                    sourceUrl: remote.sourceUrl,
+                    markdown: remote.markdown,
+                    truncated: remote.truncated,
+                  },
+                  answerKey: {
+                    ...local.answerKey,
+                    ...toAnswerKeyMap(remote.answerKey),
+                  },
+                });
+              } catch {
+                /* keep session; check/submit may fall back to API when online */
+              }
             }
           }
           if (cancelled) return;
@@ -85,6 +139,19 @@ export default function QuizPage() {
               ? "results"
               : "quiz",
           );
+          return;
+        }
+
+        const sample = getSampleQuiz(quizId);
+        if (sample) {
+          const created = createSessionRecord(
+            quizPayloadFromSample(sample),
+            sample.language,
+          );
+          const saved = await putQuizSession(created);
+          if (cancelled) return;
+          setSession(saved);
+          setView("quiz");
           return;
         }
 
@@ -436,6 +503,7 @@ export default function QuizPage() {
           language={session.language}
           messages={chatMessages}
           online={online}
+          context={localQuestionChatContext(session, current.id)}
           onMessagesChange={(messages: ChatTurn[]) =>
             patchSession((prev) => ({
               ...prev,

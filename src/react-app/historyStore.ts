@@ -144,8 +144,9 @@ export function createSessionRecord(
 
 export async function putQuizSession(
   session: QuizSessionRecord,
+  now = Date.now(),
 ): Promise<QuizSessionRecord> {
-  const next = normalizeSession({ ...session, updatedAt: Date.now() });
+  const next = normalizeSession({ ...session, updatedAt: now });
   const db = await openDb();
   try {
     const tx = db.transaction(STORE, "readwrite");

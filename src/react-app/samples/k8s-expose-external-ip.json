@@ -1,0 +1,111 @@
+{
+  "info": {
+    "id": "61e84eb7-1baa-46b4-a827-8e352f85bd4e",
+    "title": "Exposing an External IP Address to Access an Application in a Cluster | Kubernetes",
+    "sourceId": "b6153346-a8b3-4d04-b333-18083e4739e7",
+    "sourceUrl": "https://kubernetes.io/docs/tutorials/stateless-application/expose-external-ip-address",
+    "markdown": "# Exposing an External IP Address to Access an Application in a Cluster\n\nThis page shows how to create a Kubernetes Service object that exposes an\nexternal IP address.\n\n## Before you begin [Heading self-link](https://kubernetes.io/docs/tutorials/stateless-application/expose-external-ip-address/\\#before-you-begin)\n\n- Install [kubectl](https://kubernetes.io/docs/tasks/tools/).\n- Use a cloud provider like Google Kubernetes Engine or Amazon Web Services to\ncreate a Kubernetes cluster. This tutorial creates an\n[external load balancer](https://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/),\nwhich requires a cloud provider.\n- Configure `kubectl` to communicate with your Kubernetes API server. For instructions, see the\ndocumentation for your cloud provider.\n\n## Objectives [Heading self-link](https://kubernetes.io/docs/tutorials/stateless-application/expose-external-ip-address/\\#objectives)\n\n- Run five instances of a Hello World application.\n- Create a Service object that exposes an external IP address.\n- Use the Service object to access the running application.\n\n## Creating a service for an application running in five pods [Heading self-link](https://kubernetes.io/docs/tutorials/stateless-application/expose-external-ip-address/\\#creating-a-service-for-an-application-running-in-five-pods)\n\n1. Run a Hello World application in your cluster:\n\n\n\n[`service/load-balancer-example.yaml`](https://raw.githubusercontent.com/kubernetes/website/main/content/en/examples/service/load-balancer-example.yaml)![](https://kubernetes.io/images/copycode.svg)\n\n\n\n\n\n\n\n```yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n     labels:\n       app.kubernetes.io/name: load-balancer-example\n     name: hello-world\nspec:\n     replicas: 5\n     selector:\n       matchLabels:\n         app.kubernetes.io/name: load-balancer-example\n     template:\n       metadata:\n         labels:\n           app.kubernetes.io/name: load-balancer-example\n       spec:\n         containers:\n      - image: gcr.io/google-samples/hello-app:2.0\n        name: hello-world\n        ports:\n        - containerPort: 8080\n```\n\n```shell\nkubectl apply -f https://k8s.io/examples/service/load-balancer-example.yaml\n```\n\nThe preceding command creates a\n[Deployment](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)\nand an associated\n[ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/).\nThe ReplicaSet has five\n[Pods](https://kubernetes.io/docs/concepts/workloads/pods/)\neach of which runs the Hello World application.\n\n2. Display information about the Deployment:\n\n\n\n```shell\nkubectl get deployments hello-world\nkubectl describe deployments hello-world\n```\n\n3. Display information about your ReplicaSet objects:\n\n\n\n```shell\nkubectl get replicasets\nkubectl describe replicasets\n```\n\n4. Create a Service object that exposes the deployment:\n\n\n\n```shell\nkubectl expose deployment hello-world --type=LoadBalancer --name=my-service\n```\n\n5. Display information about the Service:\n\n\n\n```shell\nkubectl get services my-service\n```\n\n\n\nThe output is similar to:\n\n\n\n```console\nNAME         TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)    AGE\nmy-service   LoadBalancer   10.3.245.137   104.198.205.71   8080/TCP   54s\n```\n\n\n\n\n\n#### Note\n\nThe `type=LoadBalancer` service is backed by external cloud providers, which is not covered in this example. Please refer to [setting `type: LoadBalancer` for your Service](https://kubernetes.io/docs/concepts/services-networking/service/#loadbalancer) for the details.\n\n\n\n#### Note\n\nIf the external IP address is shown as <pending>, wait for a minute and enter the same command again.\n\n6. Display detailed information about the Service:\n\n\n\n```shell\nkubectl describe services my-service\n```\n\n\n\nThe output is similar to:\n\n\n\n```console\nName:           my-service\nNamespace:      default\nLabels:         app.kubernetes.io/name=load-balancer-example\nAnnotations:    <none>\nSelector:       app.kubernetes.io/name=load-balancer-example\nType:           LoadBalancer\nIP:             10.3.245.137\nLoadBalancer Ingress:   104.198.205.71\nPort:           <unset> 8080/TCP\nNodePort:       <unset> 32377/TCP\nEndpoints:      10.0.0.6:8080,10.0.1.6:8080,10.0.1.7:8080 + 2 more...\nSession Affinity:   None\nEvents:         <none>\n```\n\n\n\nMake a note of the external IP address (`LoadBalancer Ingress`) exposed by\nyour service. In this example, the external IP address is 104.198.205.71.\nAlso note the value of `Port` and `NodePort`. In this example, the `Port`\nis 8080 and the `NodePort` is 32377.\n\n7. In the preceding output, you can see that the service has several endpoints:\n10.0.0.6:8080,10.0.1.6:8080,10.0.1.7:8080 + 2 more. These are internal\naddresses of the pods that are running the Hello World application. To\nverify these are pod addresses, enter this command:\n\n\n\n```shell\nkubectl get pods --output=wide\n```\n\n\n\nThe output is similar to:\n\n\n\n```console\nNAME                         ...  IP         NODE\nhello-world-2895499144-1jaz9 ...  10.0.1.6   gke-cluster-1-default-pool-e0b8d269-1afc\nhello-world-2895499144-2e5uh ...  10.0.1.8   gke-cluster-1-default-pool-e0b8d269-1afc\nhello-world-2895499144-9m4h1 ...  10.0.0.6   gke-cluster-1-default-pool-e0b8d269-5v7a\nhello-world-2895499144-o4z13 ...  10.0.1.7   gke-cluster-1-default-pool-e0b8d269-1afc\nhello-world-2895499144-segjf ...  10.0.2.5   gke-cluster-1-default-pool-e0b8d269-cpuc\n```\n\n8. Use the external IP address (`LoadBalancer Ingress`) to access the Hello\nWorld application:\n\n\n\n```shell\ncurl http://<external-ip>:<port>\n```\n\n\n\nwhere `<external-ip>` is the external IP address (`LoadBalancer Ingress`)\nof your Service, and `<port>` is the value of `Port` in your Service\ndescription.\nIf you are using minikube, typing `minikube service my-service` will\nautomatically open the Hello World application in a browser.\n\nThe response to a successful request is a hello message:\n\n\n\n```console\nHello, world!\nVersion: 2.0.0\nHostname: 0bd46b45f32f\n```\n\n\n## Cleaning up [Heading self-link](https://kubernetes.io/docs/tutorials/stateless-application/expose-external-ip-address/\\#cleaning-up)\n\nTo delete the Service, enter this command:\n\n```shell\nkubectl delete services my-service\n```\n\nTo delete the Deployment, the ReplicaSet, and the Pods that are running\nthe Hello World application, enter this command:\n\n```shell\nkubectl delete deployment hello-world\n```\n\n## What's next [Heading self-link](https://kubernetes.io/docs/tutorials/stateless-application/expose-external-ip-address/\\#what-s-next)\n\nLearn more about\n[connecting applications with services](https://kubernetes.io/docs/tutorials/services/connect-applications-service/).\n\n## Feedback\n\nWas this page helpful?\n\nYesNo\n\nThanks for the feedback. If you have a specific, answerable question about how to use Kubernetes, ask it on\n[Stack Overflow](https://stackoverflow.com/questions/tagged/kubernetes).\nOpen an issue in the [GitHub Repository](https://www.github.com/kubernetes/website/) if you want to\n[report a problem](https://github.com/kubernetes/website/issues/new?title=Issue%20with%20k8s.io/docs/tutorials/stateless-application/expose-external-ip-address/)\nor\n[suggest an improvement](https://github.com/kubernetes/website/issues/new?title=Improvement%20for%20k8s.io/docs/tutorials/stateless-application/expose-external-ip-address/).\n\nLast modified April 12, 2026 at 7:00 PM PST: [--amend (97dfb65beb)](https://github.com/kubernetes/website/commit/97dfb65bebd27dbb54215464dff7931151e6fffa)",
+    "truncated": false,
+    "questionCount": 6,
+    "language": "zh",
+    "createdAt": "2026-08-17T03:11:05.830Z"
+  },
+  "questions": [
+    {
+      "id": "a2e9142c-d74f-484b-a866-c0ae3d840a02",
+      "stem": "本教程中创建的外部负载均衡器需要什么条件？",
+      "options": [
+        "需要云提供商支持",
+        "需要本地集群",
+        "需要 minikube",
+        "需要 Docker"
+      ],
+      "tags": [
+        "负载均衡器",
+        "云提供商"
+      ],
+      "correctIndex": 0,
+      "explanation": "教程明确指出创建外部负载均衡器需要云提供商。"
+    },
+    {
+      "id": "d9c68b18-cbba-4696-b4ce-1f16b8e70818",
+      "stem": "本教程中创建的 Deployment 运行了多少个 Pod 实例？",
+      "options": [
+        "1",
+        "3",
+        "5",
+        "10"
+      ],
+      "tags": [
+        "Deployment",
+        "副本数"
+      ],
+      "correctIndex": 2,
+      "explanation": "Deployment 的 spec 中 replicas 设置为 5，因此运行 5 个 Pod。"
+    },
+    {
+      "id": "068a9f0f-80f0-46da-b5c1-bbe2648a0442",
+      "stem": "用于创建 Service 对象的命令是什么？",
+      "options": [
+        "kubectl create service my-service --type=LoadBalancer",
+        "kubectl expose deployment hello-world --type=LoadBalancer --name=my-service",
+        "kubectl apply -f service.yaml",
+        "kubectl run hello-world --expose --port=8080"
+      ],
+      "tags": [
+        "kubectl",
+        "Service"
+      ],
+      "correctIndex": 1,
+      "explanation": "教程中使用 kubectl expose deployment hello-world --type=LoadBalancer --name=my-service 创建 Service。"
+    },
+    {
+      "id": "954f80f4-37ba-44bd-94fc-14f9d7e22264",
+      "stem": "在 Service 描述中，外部 IP 地址显示在哪个字段下？",
+      "options": [
+        "IP",
+        "LoadBalancer Ingress",
+        "NodePort",
+        "Port"
+      ],
+      "tags": [
+        "Service",
+        "外部IP"
+      ],
+      "correctIndex": 1,
+      "explanation": "教程指出外部 IP 地址由 LoadBalancer Ingress 字段显示。"
+    },
+    {
+      "id": "02e63080-34ed-4553-98e4-3f1ec75f5c77",
+      "stem": "如果外部 IP 地址显示为 <pending>，应该怎么做？",
+      "options": [
+        "重新创建 Service",
+        "等待一分钟再运行相同命令",
+        "删除并重新创建 Deployment",
+        "重启集群"
+      ],
+      "tags": [
+        "故障排除",
+        "外部IP"
+      ],
+      "correctIndex": 1,
+      "explanation": "教程注释建议如果外部 IP 显示为 <pending>，等待一分钟再输入相同命令。"
+    },
+    {
+      "id": "2cd73331-c05d-43b0-a50b-569163903ef0",
+      "stem": "使用 curl 访问 Hello World 应用时，URL 的格式是什么？",
+      "options": [
+        "curl http://<external-ip>:<nodeport>",
+        "curl http://<external-ip>:<port>",
+        "curl http://<cluster-ip>:<port>",
+        "curl http://<pod-ip>:<port>"
+      ],
+      "tags": [
+        "访问应用",
+        "curl"
+      ],
+      "correctIndex": 1,
+      "explanation": "教程使用 curl http://<external-ip>:<port>，其中 port 是 Service 的 Port 值。"
+    }
+  ]
+}

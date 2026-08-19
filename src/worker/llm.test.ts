@@ -3,6 +3,7 @@ import {
   coalesceSseDeltas,
   extractOpenAiSseDeltas,
   normalizeLanguage,
+  parseClientQuestionChatContext,
   pullOpenAiChatSse,
   sseEncode,
   UnusableMaterialError,
@@ -263,5 +264,34 @@ describe("validateQuestions", () => {
     };
     const out = validateQuestions({ questions: [zh, zh, zh] }, 3);
     expect(out).toHaveLength(3);
+  });
+});
+
+describe("parseClientQuestionChatContext", () => {
+  const valid = {
+    stem: "What is Minikube?",
+    options: ["A cluster", "A node", "A CLI", "A pod"],
+    correctIndex: 0,
+    explanation: "It creates a local cluster.",
+    tags: ["k8s"],
+    material: "# Minikube\n\nLocal Kubernetes.",
+  };
+
+  it("accepts a complete local quiz context", () => {
+    const ctx = parseClientQuestionChatContext(valid, "zh", 1);
+    expect(ctx).toMatchObject({
+      stem: valid.stem,
+      correctIndex: 0,
+      language: "zh",
+      userChoice: 1,
+    });
+  });
+
+  it("rejects incomplete context", () => {
+    expect(parseClientQuestionChatContext({ ...valid, stem: "" }, "en")).toBeNull();
+    expect(
+      parseClientQuestionChatContext({ ...valid, correctIndex: 9 }, "en"),
+    ).toBeNull();
+    expect(parseClientQuestionChatContext(null, "en")).toBeNull();
   });
 });
